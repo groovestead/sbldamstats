@@ -1,0 +1,49 @@
+name: Uppdatera SBL Dam-data
+
+# När vill vi att detta ska köras?
+on:
+  schedule:
+    # Varje dag kl 06:00 svensk tid (UTC+2 sommar / +1 vinter, vi tar UTC 04:00)
+    - cron: '0 4 * * *'
+  workflow_dispatch:  # Tillåter manuell körning från GitHub-gränssnittet
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # behövs för att kunna pusha tillbaka commiten
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Sätt upp Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Cacha sbl.db mellan körningar så vi inte måste hämta hela
+      # historiken varje gång — bara nya matcher
+      - name: Cacha databasen
+        uses: actions/cache@v4
+        with:
+          path: sbl.db
+          key: sbl-db-v1
+
+      - name: Hämta nya matcher
+        run: python3 fetch_data.py
+
+      - name: Exportera statisk JSON
+        run: python3 export_static.py
+
+      - name: Commita och pusha om något ändrats
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data.json
+          if git diff --staged --quiet; then
+            echo "Inget nytt att committa"
+          else
+            git commit -m "Uppdatera data ($(date -u +%Y-%m-%d))"
+            git push
+          fi

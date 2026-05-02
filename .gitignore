@@ -1,0 +1,19 @@
+# Databasen — genereras av fetch_data.py och behöver inte ligga i repot
+sbl.db
+sbl.db-journal
+
+# Debug-filer
+debug_schedule_*.html
+
+# Python-cache
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Editorer
+.vscode/
+.idea/
+*.swp

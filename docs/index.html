@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SBL Dam stats</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: #0f1115; color: #e8e8e8;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+a { color: #6cb6ff; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 20px 24px 60px; }
+
+header.site {
+  border-bottom: 1px solid #2a2f3a;
+  padding: 14px 24px;
+  background: #161a22;
+  position: sticky; top: 0; z-index: 10;
+}
+header.site .row { max-width: 1100px; margin: 0 auto; display: flex; align-items: center; gap: 16px; }
+header.site h1 { font-size: 18px; margin: 0; font-weight: 600; }
+header.site h1 a { color: inherit; cursor: pointer; }
+header.site .search { flex: 1; position: relative; }
+header.site input[type=text] {
+  width: 100%; padding: 10px 14px; border-radius: 8px;
+  background: #0f1115; border: 1px solid #2a2f3a; color: inherit; font-size: 16px;
+}
+header.site input[type=text]:focus { outline: none; border-color: #6cb6ff; }
+
+.section { margin-top: 28px; }
+.section h2 {
+  font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: #9aa3b2; margin: 0 0 10px; font-weight: 600;
+}
+.card { background: #161a22; border: 1px solid #2a2f3a; border-radius: 10px; padding: 16px; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 8px 10px; text-align: right; font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; }
+th {
+  color: #9aa3b2; font-weight: 600; font-size: 12px;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  border-bottom: 1px solid #2a2f3a;
+}
+tr.match td { border-bottom: 1px solid #1f2530; }
+tr.match:hover td { background: #1a1f2a; }
+
+.player-grid { display: grid; grid-template-columns: 100px 1fr; gap: 18px; align-items: center; }
+.player-grid .photo { width: 100px; height: 100px; border-radius: 12px; object-fit: cover; background: #2a2f3a; }
+.player-name { font-size: 28px; font-weight: 700; line-height: 1.1; }
+.player-meta { color: #9aa3b2; margin-top: 4px; font-size: 14px; }
+
+.compare { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 8px; }
+.compare .stat {
+  background: #0f1115; border: 1px solid #2a2f3a; border-radius: 8px;
+  padding: 10px; text-align: center;
+}
+.compare .stat .label { font-size: 11px; color: #9aa3b2; text-transform: uppercase; letter-spacing: 0.06em; }
+.compare .stat .val { font-size: 22px; font-weight: 700; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.compare .stat .delta { font-size: 12px; margin-top: 2px; }
+.compare .stat .delta.up { color: #6fd28e; }
+.compare .stat .delta.down { color: #ff8b8b; }
+.compare .stat .delta.zero { color: #9aa3b2; }
+
+.results { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; margin-top: 12px; }
+.result {
+  display: flex; gap: 12px; align-items: center;
+  background: #161a22; border: 1px solid #2a2f3a; border-radius: 10px;
+  padding: 12px; text-decoration: none; color: inherit; cursor: pointer;
+  transition: border-color 0.1s ease;
+}
+.result:hover { border-color: #6cb6ff; text-decoration: none; }
+.result .photo { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: #2a2f3a; flex-shrink: 0; }
+.result .name { font-weight: 600; }
+.result .meta { font-size: 13px; color: #9aa3b2; }
+
+.muted { color: #9aa3b2; }
+.empty { padding: 40px 20px; text-align: center; color: #9aa3b2; }
+.loading { padding: 80px 20px; text-align: center; color: #9aa3b2; font-size: 14px; }
+
+footer.site {
+  margin-top: 60px; padding: 24px; text-align: center;
+  color: #5a6478; font-size: 13px; border-top: 1px solid #2a2f3a;
+}
+footer.site a { color: #6cb6ff; }
+
+.scroll-x { overflow-x: auto; }
+
+@media (max-width: 700px) {
+  .compare { grid-template-columns: repeat(4, 1fr); }
+  .player-name { font-size: 22px; }
+  th, td { padding: 6px 8px; font-size: 13px; }
+}
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="row">
+    <h1><a id="home-link">SBL Dam stats</a></h1>
+    <div class="search">
+      <input type="text" id="search" placeholder="Sök spelare (förnamn eller efternamn)" autocomplete="off">
+    </div>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+  <div class="loading">Laddar data…</div>
+</main>
+
+<footer class="site">
+  Data från FIBA LiveStats / Genius Sports. Verktyget byggt av <a href="https://github.com/groovestead/sbldamstats">groovestead</a>.
+  <span id="meta"></span>
+</footer>
+
+<script>
+// =============================================================================
+// State
+// =============================================================================
+
+let DATA = null;          // hela datan från data.json
+let STATS_BY_PLAYER = {}; // {player_key: [statRow, ...]}
+let MATCHES_BY_ID = {};   // {match_id: matchObj}
+let PLAYERS_BY_KEY = {};  // {player_key: playerObj}
+let FIELD_INDEX = {};     // {fieldName: index in stat row}
+
+const $main = document.getElementById('main');
+const $search = document.getElementById('search');
+const $meta = document.getElementById('meta');
+
+// =============================================================================
+// Data laddning + index
+// =============================================================================
+
+async function load() {
+  try {
+    const r = await fetch('./data.json');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    DATA = await r.json();
+  } catch (e) {
+    $main.innerHTML = '<div class="empty"><p>Kunde inte ladda data: ' + escapeHtml(e.message) + '</p></div>';
+    return;
+  }
+
+  // Bygg index för snabb uppslagning
+  DATA.stat_fields.forEach((f, i) => { FIELD_INDEX[f] = i; });
+
+  for (const p of DATA.players) {
+    PLAYERS_BY_KEY[p.key] = p;
+  }
+  for (const m of DATA.matches) {
+    MATCHES_BY_ID[m.id] = m;
+  }
+  for (const row of DATA.stats) {
+    const key = row[FIELD_INDEX.player_key];
+    if (!STATS_BY_PLAYER[key]) STATS_BY_PLAYER[key] = [];
+    STATS_BY_PLAYER[key].push(row);
+  }
+  // Sortera varje spelares matcher fallande på match_id (proxy för datum)
+  for (const key in STATS_BY_PLAYER) {
+    STATS_BY_PLAYER[key].sort((a, b) => b[FIELD_INDEX.match_id] - a[FIELD_INDEX.match_id]);
+  }
+
+  $meta.textContent = ' · ' + DATA.meta.player_count + ' spelare, ' +
+                      DATA.meta.match_count + ' matcher · uppdaterad ' +
+                      DATA.meta.generated_at.substring(0, 10);
+
+  route();  // visa rätt sida
+}
+
+// =============================================================================
+// Hjälpfunktioner
+// =============================================================================
+
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function fmt(v, dec=1) {
+  if (v == null || isNaN(v)) return '–';
+  return Number(v).toFixed(dec);
+}
+
+function fmtInt(v) {
+  if (v == null || isNaN(v)) return '–';
+  return String(Math.round(v));
+}
+
+function get(row, field) {
+  const i = FIELD_INDEX[field];
+  return row[i];
+}
+
+function avg(rows, field) {
+  if (!rows.length) return null;
+  let sum = 0, n = 0;
+  for (const r of rows) {
+    const v = get(r, field);
+    if (v != null) { sum += v; n++; }
+  }
+  return n ? sum / n : null;
+}
+
+function fullName(p) {
+  return ((p.first || '') + ' ' + (p.last || '')).trim();
+}
+
+// =============================================================================
+// Routing (URL hash)
+// =============================================================================
+
+function route() {
+  const hash = location.hash;
+  if (hash.startsWith('#/player/')) {
+    const key = decodeURIComponent(hash.substring('#/player/'.length));
+    renderPlayerPage(key);
+  } else {
+    renderSearchPage($search.value);
+  }
+}
+
+function navigateToPlayer(key) {
+  location.hash = '#/player/' + encodeURIComponent(key);
+}
+
+function navigateHome() {
+  location.hash = '';
+  $search.value = '';
+  $search.focus();
+}
+
+document.getElementById('home-link').addEventListener('click', navigateHome);
+
+window.addEventListener('hashchange', route);
+window.addEventListener('popstate', route);
+
+// =============================================================================
+// Sökfunktion
+// =============================================================================
+
+function searchPlayers(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const matches = [];
+  for (const p of DATA.players) {
+    const full = (p.first + ' ' + p.last).toLowerCase();
+    if (full.includes(q)) {
+      matches.push(p);
+    }
+  }
+  // Sortera: namn som börjar med q först, sen efter antal matcher (mest spelade överst)
+  matches.sort((a, b) => {
+    const aStarts = a.first.toLowerCase().startsWith(q) || a.last.toLowerCase().startsWith(q);
+    const bStarts = b.first.toLowerCase().startsWith(q) || b.last.toLowerCase().startsWith(q);
+    if (aStarts !== bStarts) return aStarts ? -1 : 1;
+    const aGames = (STATS_BY_PLAYER[a.key] || []).length;
+    const bGames = (STATS_BY_PLAYER[b.key] || []).length;
+    return bGames - aGames;
+  });
+  return matches.slice(0, 50);
+}
+
+function getLatestTeam(playerKey) {
+  const rows = STATS_BY_PLAYER[playerKey];
+  if (!rows || !rows.length) return '';
+  return get(rows[0], 'team_name') || '';
+}
+
+// =============================================================================
+// Render: söksida
+// =============================================================================
+
+function renderSearchPage(query) {
+  if (!query || !query.trim()) {
+    $main.innerHTML = `
+      <div class="empty">
+        <p>Sök efter en spelare i rutan ovan.<br>Du kan skriva för- eller efternamn.</p>
+        <p class="muted" style="margin-top:24px;font-size:13px">
+          Verktyget täcker säsongerna 2021–2025 och uppdateras automatiskt
+          dagligen när nya matcher har spelats.
+        </p>
+      </div>`;
+    return;
+  }
+
+  const results = searchPlayers(query);
+  if (!results.length) {
+    $main.innerHTML = `<div class="empty"><p>Inga spelare hittade för "${escapeHtml(query)}".</p></div>`;
+    return;
+  }
+
+  const cards = results.map(p => {
+    const games = (STATS_BY_PLAYER[p.key] || []).length;
+    const team = getLatestTeam(p.key);
+    const metaParts = [];
+    if (p.pos) metaParts.push(escapeHtml(p.pos));
+    if (team) metaParts.push(escapeHtml(team));
+    if (games) metaParts.push(games + ' matcher');
+
+    const photo = p.photo
+      ? `<img class="photo" src="${escapeHtml(p.photo)}" alt="" loading="lazy">`
+      : `<div class="photo"></div>`;
+
+    return `
+      <a class="result" href="#/player/${encodeURIComponent(p.key)}">
+        ${photo}
+        <div>
+          <div class="name">${escapeHtml(fullName(p))}</div>
+          <div class="meta">${metaParts.join(' · ')}</div>
+        </div>
+      </a>`;
+  }).join('');
+
+  $main.innerHTML = `
+    <div class="section">
+      <h2>${results.length} resultat</h2>
+      <div class="results">${cards}</div>
+    </div>`;
+}
+
+// =============================================================================
+// Render: spelarsida
+// =============================================================================
+
+function renderPlayerPage(key) {
+  const player = PLAYERS_BY_KEY[key];
+  if (!player) {
+    $main.innerHTML = `<div class="empty"><p>Spelaren finns inte.</p><p><a href="#">← Tillbaka</a></p></div>`;
+    return;
+  }
+
+  const allRows = STATS_BY_PLAYER[key] || [];
+  if (!allRows.length) {
+    $main.innerHTML = `
+      <div class="card"><div class="player-grid">
+        ${player.photo ? `<img class="photo" src="${escapeHtml(player.photo)}">` : '<div class="photo"></div>'}
+        <div>
+          <div class="player-name">${escapeHtml(fullName(player))}</div>
+          <div class="player-meta">Inga matcher i databasen.</div>
+        </div>
+      </div></div>`;
+    return;
+  }
+
+  // Header
+  const teams = teamsByYear(allRows);
+  const latestTeam = teams.length ? teams[0].team : '';
+  const metaParts = [];
+  if (player.pos) metaParts.push(escapeHtml(player.pos));
+  if (player.shirt) metaParts.push('#' + escapeHtml(player.shirt));
+  if (latestTeam) metaParts.push(escapeHtml(latestTeam));
+
+  const photo = player.photo
+    ? `<img class="photo" src="${escapeHtml(player.photo)}">`
+    : `<div class="photo"></div>`;
+
+  let html = `
+    <div class="card">
+      <div class="player-grid">
+        ${photo}
+        <div>
+          <div class="player-name">${escapeHtml(fullName(player))}</div>
+          <div class="player-meta">${metaParts.join(' · ')}</div>
+        </div>
+      </div>
+    </div>`;
+
+  // Senaste 5 matcher vs säsong-snitt
+  html += renderRecentVsSeason(allRows);
+
+  // Säsongsaggregat
+  html += renderSeasonsTable(allRows);
+
+  // Lag
+  html += renderTeamsTable(teams);
+
+  // Game log
+  html += renderGameLog(allRows);
+
+  $main.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+function renderRecentVsSeason(allRows) {
+  const last5 = allRows.slice(0, 5);
+  if (last5.length === 0) return '';
+  const latestMatchId = get(last5[0], 'match_id');
+  const latestMatch = MATCHES_BY_ID[latestMatchId];
+  if (!latestMatch) return '';
+  const seasonYear = latestMatch.year;
+
+  // Säsongssnittet ska vara över hennes matcher i den säsongen
+  const seasonRows = allRows.filter(r => {
+    const m = MATCHES_BY_ID[get(r, 'match_id')];
+    return m && m.year === seasonYear;
+  });
+
+  const cells = [
+    {label: 'PTS', field: 'points'},
+    {label: 'REB', field: null, calc: r => (get(r,'rebounds_def')||0) + (get(r,'rebounds_off')||0)},
+    {label: 'AST', field: 'assists'},
+    {label: 'STL', field: 'steals'},
+    {label: 'BLK', field: 'blocks'},
+    {label: 'TOV', field: 'turnovers'},
+    {label: '+/-', field: 'plus_minus'},
+  ].map(c => {
+    const aggRows = (rows) => {
+      if (c.calc) {
+        const vs = rows.map(c.calc).filter(v => v != null);
+        return vs.length ? vs.reduce((a,b)=>a+b,0) / vs.length : null;
+      }
+      return avg(rows, c.field);
+    };
+    const recent = aggRows(last5);
+    const season = aggRows(seasonRows);
+    let delta = '';
+    if (recent != null && season != null) {
+      const diff = recent - season;
+      if (Math.abs(diff) < 0.05) {
+        delta = `<div class="delta zero">±0.0</div>`;
+      } else if (diff > 0) {
+        delta = `<div class="delta up">+${diff.toFixed(1)} vs säsong</div>`;
+      } else {
+        delta = `<div class="delta down">${diff.toFixed(1)} vs säsong</div>`;
+      }
+    }
+    return `
+      <div class="stat">
+        <div class="label">${c.label}</div>
+        <div class="val">${fmt(recent)}</div>
+        ${delta}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="section">
+      <h2>Senaste ${last5.length} matcher · säsong ${seasonYear}</h2>
+      <div class="card">
+        <div class="muted" style="margin-bottom:6px">Snitt över hennes senaste matcher i jämförelse med hela säsongens snitt</div>
+        <div class="compare">${cells}</div>
+      </div>
+    </div>`;
+}
+
+function renderSeasonsTable(allRows) {
+  // Gruppera per säsong
+  const bySeason = {};
+  for (const r of allRows) {
+    const m = MATCHES_BY_ID[get(r, 'match_id')];
+    if (!m) continue;
+    if (!bySeason[m.year]) bySeason[m.year] = [];
+    bySeason[m.year].push(r);
+  }
+  const years = Object.keys(bySeason).map(Number).sort((a,b) => b-a);
+  if (!years.length) return '';
+
+  const rows = years.map(y => {
+    const rs = bySeason[y];
+    const reb = rs.map(r => (get(r,'rebounds_def')||0) + (get(r,'rebounds_off')||0));
+    const rebAvg = reb.length ? reb.reduce((a,b)=>a+b,0)/reb.length : null;
+    return `
+      <tr>
+        <td>${y}</td>
+        <td>${rs.length}</td>
+        <td>${fmt(avg(rs,'points'))}</td>
+        <td>${fmt(rebAvg)}</td>
+        <td>${fmt(avg(rs,'assists'))}</td>
+        <td>${fmt(avg(rs,'steals'))}</td>
+        <td>${fmt(avg(rs,'blocks'))}</td>
+        <td>${fmt(avg(rs,'turnovers'))}</td>
+        <td>${fmt(avg(rs,'fg_made'))}/${fmt(avg(rs,'fg_att'))}</td>
+        <td>${fmt(avg(rs,'three_made'))}/${fmt(avg(rs,'three_att'))}</td>
+        <td>${fmt(avg(rs,'ft_made'))}/${fmt(avg(rs,'ft_att'))}</td>
+        <td>${fmt(avg(rs,'plus_minus'))}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="section">
+      <h2>Säsongssnitt</h2>
+      <div class="card scroll-x">
+        <table>
+          <thead><tr>
+            <th>Säsong</th><th>Matcher</th>
+            <th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TOV</th>
+            <th>FG</th><th>3P</th><th>FT</th><th>+/-</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function teamsByYear(allRows) {
+  const counts = {};
+  for (const r of allRows) {
+    const m = MATCHES_BY_ID[get(r, 'match_id')];
+    if (!m) continue;
+    const k = m.year + '|' + (get(r, 'team_name') || '');
+    if (!counts[k]) counts[k] = {year: m.year, team: get(r, 'team_name') || '', games: 0};
+    counts[k].games++;
+  }
+  const arr = Object.values(counts);
+  arr.sort((a, b) => (b.year - a.year) || (b.games - a.games));
+  return arr;
+}
+
+function renderTeamsTable(teams) {
+  if (!teams.length) return '';
+  const rows = teams.map(t => `
+    <tr><td>${t.year}</td><td>${escapeHtml(t.team)}</td><td>${t.games} matcher</td></tr>`).join('');
+  return `
+    <div class="section">
+      <h2>Lag</h2>
+      <div class="card scroll-x">
+        <table>
+          <thead><tr><th>Säsong</th><th>Lag</th><th>Antal matcher</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderGameLog(allRows) {
+  const recent = allRows.slice(0, 20);
+  if (!recent.length) return '';
+  const rows = recent.map(r => {
+    const m = MATCHES_BY_ID[get(r, 'match_id')];
+    if (!m) return '';
+    const team = get(r, 'team_name') || '';
+    const ownIsHome = team && team === m.home;
+    const opp = ownIsHome ? m.away : m.home;
+    const score = (m.hs != null && m.as != null) ? `${m.hs}–${m.as}` : '';
+    const reb = (get(r,'rebounds_def')||0) + (get(r,'rebounds_off')||0);
+    const result = score ? `${score} mot ${escapeHtml(opp || '')}` : escapeHtml(opp || '');
+    return `
+      <tr class="match">
+        <td>${escapeHtml(m.date || '')}</td>
+        <td class="muted">${result}</td>
+        <td>${escapeHtml(get(r,'minutes') || '')}</td>
+        <td>${fmtInt(get(r,'points'))}</td>
+        <td>${fmtInt(reb)}</td>
+        <td>${fmtInt(get(r,'assists'))}</td>
+        <td>${fmtInt(get(r,'steals'))}</td>
+        <td>${fmtInt(get(r,'blocks'))}</td>
+        <td>${fmtInt(get(r,'turnovers'))}</td>
+        <td>${fmtInt(get(r,'fg_made'))}/${fmtInt(get(r,'fg_att'))}</td>
+        <td>${fmtInt(get(r,'three_made'))}/${fmtInt(get(r,'three_att'))}</td>
+        <td>${fmtInt(get(r,'ft_made'))}/${fmtInt(get(r,'ft_att'))}</td>
+        <td>${fmtInt(get(r,'plus_minus'))}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="section">
+      <h2>Senaste matcherna</h2>
+      <div class="card scroll-x">
+        <table>
+          <thead><tr>
+            <th>Datum</th><th>Match</th><th>Min</th>
+            <th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TOV</th>
+            <th>FG</th><th>3P</th><th>FT</th><th>+/-</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+// =============================================================================
+// Sökrutans event
+// =============================================================================
+
+let searchTimer = null;
+$search.addEventListener('input', () => {
+  // Om vi är på en spelarsida, gå tillbaka till sök vid första bokstaven
+  if (location.hash.startsWith('#/player/') && $search.value.trim()) {
+    location.hash = '';
+    return;
+  }
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    if (DATA) renderSearchPage($search.value);
+  }, 80);
+});
+
+// =============================================================================
+// Start
+// =============================================================================
+
+load();
+</script>
+
+</body>
+</html>
