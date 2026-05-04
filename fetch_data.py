@@ -29,6 +29,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 # -----------------------------------------------------------------------------
@@ -108,6 +109,7 @@ CREATE TABLE IF NOT EXISTS matches (
     competition_id INTEGER,
     season_year INTEGER,
     match_date TEXT,        -- "Sep 27, 2025, 4:00 PM"
+    parsed_date TEXT,       -- "2025-09-27" (ISO-format, för korrekt sortering)
     venue TEXT,
     status TEXT,            -- COMPLETE / LIVE / SCHEDULED / CANCELLED
     home_team TEXT,
@@ -139,16 +141,61 @@ CREATE TABLE IF NOT EXISTS player_match_stats (
     PRIMARY KEY (match_id, player_key)
 );
 
+CREATE TABLE IF NOT EXISTS match_pbp (
+    match_id INTEGER PRIMARY KEY,
+    pbp_json TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_pms_player ON player_match_stats (player_key);
 CREATE INDEX IF NOT EXISTS idx_pms_team ON player_match_stats (team_name);
 CREATE INDEX IF NOT EXISTS idx_matches_season ON matches (season_year);
 """
 
 
+def parse_match_date(date_str):
+    """Tolka FIBA:s datumformat till ISO-datum (ÅÅÅÅ-MM-DD).
+
+    Indata ser ut som "Sep 27, 2025, 4:00 PM".
+    Returnerar "2025-09-27", eller None om strängen inte kan tolkas.
+    """
+    if not date_str:
+        return None
+    try:
+        dt = datetime.strptime(date_str.strip(), "%b %d, %Y, %I:%M %p")
+        return dt.strftime("%Y-%m-%d")
+    except ValueError:
+        return None
+
+
 def open_db():
     """Öppna (och initiera) databasen."""
     conn = sqlite3.connect(str(DB_PATH))
     conn.executescript(SCHEMA)
+
+    # Lägg till parsed_date om databasen är äldre och saknar kolumnen.
+    # (ALTER TABLE ADD COLUMN misslyckas om kolumnen redan finns, därav try/except.)
+    try:
+        conn.execute("ALTER TABLE matches ADD COLUMN parsed_date TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # kolumnen finns redan
+
+    # Fyll i parsed_date för befintliga rader som saknar värdet.
+    rows = conn.execute(
+        "SELECT match_id, match_date FROM matches WHERE parsed_date IS NULL AND match_date IS NOT NULL"
+    ).fetchall()
+    if rows:
+        print(f"Migrerar datum för {len(rows)} befintliga matcher…")
+        for match_id, match_date in rows:
+            parsed = parse_match_date(match_date)
+            if parsed:
+                conn.execute(
+                    "UPDATE matches SET parsed_date = ? WHERE match_id = ?",
+                    (parsed, match_id),
+                )
+        conn.commit()
+        print("  Klart.")
+
     return conn
 
 
@@ -242,6 +289,56 @@ def make_player_key(player):
 
 
 # -----------------------------------------------------------------------------
+# PBP-extraktion (används vid sparning och migration)
+# -----------------------------------------------------------------------------
+
+_PBP_INCLUDE = {
+    "2pt", "3pt", "freethrow", "rebound", "steal", "turnover",
+    "block", "foul", "substitution", "timeout",
+}
+
+
+def extract_pbp(data):
+    """Extrahera play-by-play ur ett FIBA-matchobjekt.
+
+    Returnerar None om matchen saknar PBP-data, annars en dict
+    {"t1": str, "t2": str, "ev": [[period, gt, tno, at, sub, ok, s1, s2, fn, ln], ...]}.
+    """
+    raw_events = data.get("pbp") or []
+    if not raw_events:
+        return None
+    tm_raw = data.get("tm") or {}
+    if isinstance(tm_raw, dict):
+        tm_vals = list(tm_raw.values())
+    else:
+        tm_vals = list(tm_raw)
+    t1 = tm_vals[0].get("name", "") if len(tm_vals) > 0 else ""
+    t2 = tm_vals[1].get("name", "") if len(tm_vals) > 1 else ""
+    events = []
+    for ev in reversed(raw_events):  # rådata är omvänd kronologisk ordning
+        at = ev.get("actionType", "")
+        if at not in _PBP_INCLUDE:
+            continue
+        if ev.get("subType") == "offensivedeadball":
+            continue
+        events.append([
+            ev.get("period", 0),
+            ev.get("gt", ""),
+            ev.get("tno", 0),
+            at,
+            ev.get("subType", ""),
+            ev.get("success", 0),
+            ev.get("s1", 0),
+            ev.get("s2", 0),
+            ev.get("firstName") or ev.get("internationalFirstName") or "",
+            ev.get("familyName") or ev.get("internationalFamilyName") or "",
+        ])
+    if not events:
+        return None
+    return {"t1": t1, "t2": t2, "ev": events}
+
+
+# -----------------------------------------------------------------------------
 # Spara en match i databasen
 # -----------------------------------------------------------------------------
 
@@ -267,18 +364,20 @@ def save_match(conn, match_id, competition_id, season_year, schedule_info, data)
             ),
         )
 
-    # Match-rad
+    # Match-rad (raw_json sparas ej längre — PBP hanteras separat)
+    match_date = schedule_info.get("date")
     cur.execute(
         """INSERT OR REPLACE INTO matches (
-              match_id, competition_id, season_year, match_date, venue,
+              match_id, competition_id, season_year, match_date, parsed_date, venue,
               status, home_team, away_team, home_score, away_score,
               attendance, raw_json, fetched_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, datetime('now'))""",
         (
             match_id,
             competition_id,
             season_year,
-            schedule_info.get("date"),
+            match_date,
+            parse_match_date(match_date),
             schedule_info.get("venue"),
             schedule_info.get("status"),
             home.get("name"),
@@ -286,9 +385,16 @@ def save_match(conn, match_id, competition_id, season_year, schedule_info, data)
             _int(home.get("score") or home.get("full_score")),
             _int(away.get("score") or away.get("full_score")),
             _int(data.get("attendance")),
-            json.dumps(data, ensure_ascii=False),
         ),
     )
+
+    # Play-by-play
+    pbp = extract_pbp(data)
+    if pbp:
+        cur.execute(
+            "INSERT OR REPLACE INTO match_pbp (match_id, pbp_json) VALUES (?, ?)",
+            (match_id, json.dumps(pbp, separators=(",", ":"), ensure_ascii=False)),
+        )
 
     # Spelare och deras matchstatistik
     for team in (home, away):
