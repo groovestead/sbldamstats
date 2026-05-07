@@ -36,9 +36,13 @@ from pathlib import Path
 # Konfiguration
 # -----------------------------------------------------------------------------
 
-# competition_id för SBL Dam per säsong (från Genius Sports). Säsongerna före
-# 2021 finns inte i FIBA LiveStats — ligan rapporterade inte dit då.
+# competition_id för SBL Dam per säsong (från Genius Sports).
+# Hittade via https://hosted.dcd.shared.geniussports.com/SBF/en/competition/{id}/statistics/team
 SEASONS = {
+    2017: 17548,
+    2018: 20995,
+    2019: 24009,
+    2020: 27660,
     2021: 30967,
     2022: 34105,
     2023: 36406,
