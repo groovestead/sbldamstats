@@ -128,6 +128,7 @@ let STATS_BY_PLAYER = {}; // {player_key: [statRow, ...]}
 let MATCHES_BY_ID = {};   // {match_id: matchObj}
 let PLAYERS_BY_KEY = {};  // {player_key: playerObj}
 let FIELD_INDEX = {};     // {fieldName: index in stat row}
+let PBP_FOULS = {};       // {"player_key:match_id": [off, tech, unsport]}
 
 const $main = document.getElementById('main');
 const $search = document.getElementById('search');
@@ -149,6 +150,7 @@ async function load() {
 
   // Bygg index för snabb uppslagning
   DATA.stat_fields.forEach((f, i) => { FIELD_INDEX[f] = i; });
+  PBP_FOULS = DATA.pbp_fouls || {};
 
   for (const p of DATA.players) {
     PLAYERS_BY_KEY[p.key] = p;
@@ -197,6 +199,11 @@ function fmtInt(v) {
 function get(row, field) {
   const i = FIELD_INDEX[field];
   return row[i];
+}
+
+// Returnerar [off, tech, unsport] för en spelare i en match, eller [0,0,0] om inget finns.
+function getPbpFouls(playerKey, matchId) {
+  return PBP_FOULS[playerKey + ':' + matchId] || null;
 }
 
 function avg(rows, field) {
@@ -466,6 +473,13 @@ function renderSeasonsTable(allRows) {
     const rs = bySeason[y];
     const reb = rs.map(r => (get(r,'rebounds_def')||0) + (get(r,'rebounds_off')||0));
     const rebAvg = reb.length ? reb.reduce((a,b)=>a+b,0)/reb.length : null;
+    let totalOff = 0, totalTech = 0;
+    for (const r of rs) {
+      const pf = getPbpFouls(get(r,'player_key'), get(r,'match_id'));
+      if (pf) { totalOff += pf[0]; totalTech += pf[1] + pf[2]; }
+    }
+    const ofCell = totalOff ? `<td style="color:#ff8b8b">${totalOff}</td>` : '<td class="muted">0</td>';
+    const tfCell = totalTech ? `<td style="color:#ff8b8b">${totalTech}</td>` : '<td class="muted">0</td>';
     return `
       <tr>
         <td>${y}</td>
@@ -476,6 +490,8 @@ function renderSeasonsTable(allRows) {
         <td>${fmt(avg(rs,'steals'))}</td>
         <td>${fmt(avg(rs,'blocks'))}</td>
         <td>${fmt(avg(rs,'turnovers'))}</td>
+        ${ofCell}
+        ${tfCell}
         <td>${fmt(avg(rs,'fg_made'))}/${fmt(avg(rs,'fg_att'))}</td>
         <td>${fmt(avg(rs,'three_made'))}/${fmt(avg(rs,'three_att'))}</td>
         <td>${fmt(avg(rs,'ft_made'))}/${fmt(avg(rs,'ft_att'))}</td>
@@ -491,6 +507,7 @@ function renderSeasonsTable(allRows) {
           <thead><tr>
             <th>Säsong</th><th>Matcher</th>
             <th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TOV</th>
+            <th title="Offensiva fouls (totalt)">OF</th><th title="Tekniska/osportsliga fouls (totalt)">TF</th>
             <th>FG</th><th>3P</th><th>FT</th><th>+/-</th>
           </tr></thead>
           <tbody>${rows}</tbody>
@@ -541,6 +558,12 @@ function renderGameLog(allRows) {
     const score = (m.hs != null && m.as != null) ? `${m.hs}–${m.as}` : '';
     const reb = (get(r,'rebounds_def')||0) + (get(r,'rebounds_off')||0);
     const result = score ? `${score} mot ${escapeHtml(opp || '')}` : escapeHtml(opp || '');
+    const pkey = get(r, 'player_key');
+    const pf = getPbpFouls(pkey, get(r, 'match_id'));
+    const offFoul = pf ? pf[0] : 0;
+    const techFoul = pf ? (pf[1] + pf[2]) : 0;
+    const ofCell = offFoul ? `<td style="color:#ff8b8b">${offFoul}</td>` : '<td class="muted">0</td>';
+    const tfCell = techFoul ? `<td style="color:#ff8b8b">${techFoul}</td>` : '<td class="muted">0</td>';
     return `
       <tr class="match">
         <td>${escapeHtml(m.date || '')}</td>
@@ -552,6 +575,8 @@ function renderGameLog(allRows) {
         <td>${fmtInt(get(r,'steals'))}</td>
         <td>${fmtInt(get(r,'blocks'))}</td>
         <td>${fmtInt(get(r,'turnovers'))}</td>
+        ${ofCell}
+        ${tfCell}
         <td>${fmtInt(get(r,'fg_made'))}/${fmtInt(get(r,'fg_att'))}</td>
         <td>${fmtInt(get(r,'three_made'))}/${fmtInt(get(r,'three_att'))}</td>
         <td>${fmtInt(get(r,'ft_made'))}/${fmtInt(get(r,'ft_att'))}</td>
@@ -567,6 +592,7 @@ function renderGameLog(allRows) {
           <thead><tr>
             <th>Datum</th><th>Match</th><th>Min</th>
             <th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TOV</th>
+            <th title="Offensiva fouls">OF</th><th title="Tekniska/osportsliga fouls">TF</th>
             <th>FG</th><th>3P</th><th>FT</th><th>+/-</th>
           </tr></thead>
           <tbody>${rows}</tbody>
