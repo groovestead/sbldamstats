@@ -130,6 +130,47 @@ def main():
         row[team_idx] = canonical_team(row[team_idx])
         stats.append(row)
 
+    # PBP per match — sparas i docs/pbp/{match_id}.json, laddas on-demand av frontend
+    # Samtidigt parsas offensiva fouls, tekniska fouls och osportsliga fouls per spelare/match.
+    pbp_dir = OUT_DIR / "pbp"
+    pbp_dir.mkdir(parents=True, exist_ok=True)
+    pbp_count = 0
+    _EXTRA_FOUL_SUBTYPES = {"offensive", "technical", "unsportsmanlike"}
+    pbp_fouls = {}  # "player_key:match_id" -> [off, tech, unsport]
+
+    for pbp_row in conn.execute("SELECT match_id, pbp_json FROM match_pbp"):
+        mid, pbp_raw = pbp_row[0], pbp_row[1]
+        if not pbp_raw:
+            continue
+        with open(pbp_dir / f"{mid}.json", "w", encoding="utf-8") as f:
+            f.write(pbp_raw)
+        pbp_count += 1
+
+        try:
+            pbp_data = json.loads(pbp_raw)
+        except Exception:
+            continue
+        for ev in pbp_data.get("ev", []):
+            if len(ev) < 10 or ev[3] != "foul" or ev[4] not in _EXTRA_FOUL_SUBTYPES:
+                continue
+            fn = (ev[8] or "").strip()
+            ln = (ev[9] or "").strip()
+            if not fn and not ln:
+                continue
+            pkey = f"{fn}|{ln}".lower()
+            k = f"{pkey}:{mid}"
+            if k not in pbp_fouls:
+                pbp_fouls[k] = [0, 0, 0]
+            if ev[4] == "offensive":
+                pbp_fouls[k][0] += 1
+            elif ev[4] == "technical":
+                pbp_fouls[k][1] += 1
+            else:
+                pbp_fouls[k][2] += 1
+
+    print(f"  PBP: {pbp_count} matchfiler i docs/pbp/")
+    print(f"  PBP fouls: {len(pbp_fouls)} spelare/match-rader (OFF/TF/UNSPORT)")
+
     data = {
         "meta": {
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -142,6 +183,7 @@ def main():
         "players": players,
         "matches": matches,
         "stats": stats,
+        "pbp_fouls": pbp_fouls,
     }
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -153,20 +195,6 @@ def main():
     print(f"Skrev {OUT_FILE.relative_to(ROOT)}")
     print(f"  {len(players)} spelare, {len(matches)} matcher, {len(stats)} statistikrader")
     print(f"  Filstorlek: {size_kb:.1f} KB")
-
-    # PBP per match — sparas i docs/pbp/{match_id}.json, laddas on-demand av frontend
-    pbp_dir = OUT_DIR / "pbp"
-    pbp_dir.mkdir(parents=True, exist_ok=True)
-    pbp_count = 0
-    for pbp_row in conn.execute("SELECT match_id, pbp_json FROM match_pbp"):
-        mid, pbp_raw = pbp_row[0], pbp_row[1]
-        if not pbp_raw:
-            continue
-        with open(pbp_dir / f"{mid}.json", "w", encoding="utf-8") as f:
-            f.write(pbp_raw)
-        pbp_count += 1
-
-    print(f"  PBP: {pbp_count} matchfiler i docs/pbp/")
 
     conn.close()
 
