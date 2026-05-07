@@ -220,6 +220,11 @@ function fullName(p) {
   return ((p.first || '') + ' ' + (p.last || '')).trim();
 }
 
+function fmtSeason(year) {
+  const y = Number(year);
+  return (y % 100) + '/' + String((y + 1) % 100).padStart(2, '0');
+}
+
 // =============================================================================
 // Routing (URL hash)
 // =============================================================================
@@ -449,7 +454,7 @@ function renderRecentVsSeason(allRows) {
 
   return `
     <div class="section">
-      <h2>Senaste ${last5.length} matcher · säsong ${seasonYear}</h2>
+      <h2>Senaste ${last5.length} matcher · säsong ${fmtSeason(seasonYear)}</h2>
       <div class="card">
         <div class="muted" style="margin-bottom:6px">Snitt över hennes senaste matcher i jämförelse med hela säsongens snitt</div>
         <div class="compare">${cells}</div>
@@ -482,7 +487,7 @@ function renderSeasonsTable(allRows) {
     const tfCell = totalTech ? `<td style="color:#ff8b8b">${totalTech}</td>` : '<td class="muted">0</td>';
     return `
       <tr>
-        <td>${y}</td>
+        <td>${fmtSeason(y)}</td>
         <td>${rs.length}</td>
         <td>${fmt(avg(rs,'points'))}</td>
         <td>${fmt(rebAvg)}</td>
@@ -533,7 +538,7 @@ function teamsByYear(allRows) {
 function renderTeamsTable(teams) {
   if (!teams.length) return '';
   const rows = teams.map(t => `
-    <tr><td>${t.year}</td><td>${escapeHtml(t.team)}</td><td>${t.games} matcher</td></tr>`).join('');
+    <tr><td>${fmtSeason(t.year)}</td><td>${escapeHtml(t.team)}</td><td>${t.games} matcher</td></tr>`).join('');
   return `
     <div class="section">
       <h2>Lag</h2>
