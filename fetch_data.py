@@ -39,6 +39,13 @@ from pathlib import Path
 # competition_id för SBL Dam per säsong (från Genius Sports).
 # Hittade via https://hosted.dcd.shared.geniussports.com/SBF/en/competition/{id}/statistics/team
 SEASONS = {
+    2010: 5959,
+    2011: 5961,
+    2012: 5960,
+    2013: 5968,
+    2014: 5969,
+    2015: 5970,
+    2016: 8524,
     2017: 17548,
     2018: 20995,
     2019: 24009,
