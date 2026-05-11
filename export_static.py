@@ -41,7 +41,86 @@ _TEAM_CANON = {
     "wetterbygden sparks":           "Wetterbygdens Sparks",
     "sjuhärads basketbollförening":  "Sjuhärads Basket",
     "östersunds basket":             "Östersund Basket",
+    "udominate":                     "A3 Basket Umeå",        # tidigare namn
+    "udominate (umeå)":              "A3 Basket Umeå",
+    "högsbo":                        "Högsbo",
+    "högsbo (göteborg)":             "Högsbo",
 }
+
+# SM-finalhistorik 1958–2025. Källa: Finalhistoria210426_1.xlsx.
+# Namnen är normaliserade till kanoniska klubbnamn för att matcha statistikdatan.
+# aborted=True innebär att säsongen avbröts innan finale spelades klart (2020: COVID).
+_FINALS_HISTORY = [
+    # year, champion, finalist, aborted
+    (2025, "Luleå Basket",        "Högsbo",                    False),
+    (2024, "Södertälje BBK",      "Luleå Basket",              False),
+    (2023, "Luleå Basket",        "Södertälje BBK",            False),
+    (2022, "Norrköping Dolphins", "Luleå Basket",              False),
+    (2021, "Luleå Basket",        "Alvik Basket",              False),
+    (2020, "Luleå Basket",        "Alvik Basket",              True),  # avbruten (COVID)
+    (2019, "A3 Basket Umeå",      "Högsbo",                    False),
+    (2018, "Luleå Basket",        "A3 Basket Umeå",            False),
+    (2017, "Luleå Basket",        "A3 Basket Umeå",            False),
+    (2016, "Luleå Basket",        "A3 Basket Umeå",            False),
+    (2015, "Luleå Basket",        "A3 Basket Umeå",            False),
+    (2014, "Luleå Basket",        "Norrköping Dolphins",       False),
+    (2013, "Norrköping Dolphins", "Solna BK",                  False),
+    (2012, "Södertälje BBK",      "Luleå Basket",              False),
+    (2011, "Södertälje BBK",      "Luleå Basket",              False),
+    (2010, "08 Stockholm",        "Solna BK",                  False),
+    (2009, "Solna BK",            "Södertälje BBK",            False),
+    (2008, "Solna BK",            "Södertälje BBK",            False),
+    (2007, "08 Stockholm",        "Luleå Basket",              False),
+    (2006, "Solna BK",            "Luleå Basket",              False),
+    (2005, "Visby Ladies",        "Luleå Basket",              False),
+    (2004, "Solna BK",            "Brahe (Huskvarna)",         False),
+    (2003, "08 Stockholm",        "Solna BK",                  False),
+    (2002, "Solna BK",            "Norrköping Dolphins",       False),
+    (2001, "08 Alvik Stockholm",  "IK Eos",                    False),
+    (2000, "Norrköping Dolphins", "Nerike (Örebro)",           False),
+    (1999, "Nerike (Örebro)",     "Södertälje BBK",            False),
+    (1998, "Nerike (Örebro)",     "Alvik Basket",              False),
+    (1997, "Södertälje BBK",      "Visby Ladies",              False),
+    (1996, "Nerike (Örebro)",     "Visby Ladies",              False),
+    (1995, "Bro (Örebro)",        "Stockholm Capitals",        False),
+    (1994, "Arvika",              "Stockholm Capitals",        False),
+    (1993, "Arvika",              "Uppsala Basket",            False),
+    (1992, "Arvika",              "Solna BK",                  False),
+    (1991, "Arvika",              "Södertälje BBK",            False),
+    (1990, "Arvika",              "KFUM Söder (Stockholm)",    False),
+    (1989, "Arvika",              "Visby Ladies",              False),
+    (1988, "Solna BK",            "Arvika",                    False),
+    (1987, "Solna BK",            "Visby Ladies",              False),
+    (1986, "Solna BK",            "Visby Ladies",              False),
+    (1985, "Södertälje BBK",      "Uppsala Basket",            False),
+    (1984, "Södertälje BBK",      "Solna BK",                  False),
+    (1983, "Södertälje BBK",      "Solna BK",                  False),
+    (1982, "Södertälje BBK",      "Uppsala Basket",            False),
+    (1981, "Södertälje BBK",      "Uppsala Basket",            False),
+    (1980, "Södertälje BBK",      "Uppsala Basket",            False),
+    (1979, "Södertälje BBK",      "KFUM Söder (Stockholm)",    False),
+    (1978, "Södertälje BBK",      "Uppsala Basket",            False),
+    (1977, "Södertälje BBK",      "Högsbo",                    False),
+    (1976, "Högsbo",              "Alvik Basket",              False),
+    (1975, "Högsbo",              "KFUM-KFUM Västerås",        False),
+    (1974, "KFUM-KFUM Västerås", "BK Rush (Stockholm)",       False),
+    (1973, "KFUM Söder (Stockholm)", "KFUM-KFUM Västerås",    False),
+    (1972, "KFUM-KFUM Västerås", "KFUM Söder (Stockholm)",    False),
+    (1971, "Ruter/Mörby (Stockholm)", "BK Rush (Stockholm)",  False),
+    (1970, "BK Rush (Stockholm)", "Ruter/Mörby (Stockholm)",  False),
+    (1969, "Ruter/Mörby (Stockholm)", "Katrineholms SK",      False),
+    (1968, "BK Ruter (Stockholm)", "BK Rush (Stockholm)",     False),
+    (1967, "BK Ruter (Stockholm)", "Blackeberg (Stockholm)",  False),
+    (1966, "Sunne",               "Blackeberg (Stockholm)",   False),
+    (1965, "Blackeberg (Stockholm)", "BK Rush (Stockholm)",   False),
+    (1964, "Blackeberg (Stockholm)", "BK Ruter (Stockholm)",  False),
+    (1963, "Blackeberg (Stockholm)", "Göteborgs Kvinnliga IK", False),
+    (1962, "Blackeberg (Stockholm)", "Göteborgs Kvinnliga IK", False),
+    (1961, "Blackeberg (Stockholm)", "BK Rilton (Stockholm)", False),
+    (1960, "BK Rilton (Stockholm)", "Blackeberg (Stockholm)", False),
+    (1959, "Blackeberg (Stockholm)", "BK Rilton (Stockholm)", False),
+    (1958, "BK Rilton (Stockholm)", "KFUM Söder (Stockholm)", False),
+]
 
 
 def canonical_team(name):
@@ -171,6 +250,11 @@ def main():
     print(f"  PBP: {pbp_count} matchfiler i docs/pbp/")
     print(f"  PBP fouls: {len(pbp_fouls)} spelare/match-rader (OFF/TF/UNSPORT)")
 
+    finals = [
+        {"year": yr, "champion": ch, "finalist": fn, "aborted": ab}
+        for yr, ch, fn, ab in _FINALS_HISTORY
+    ]
+
     data = {
         "meta": {
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -184,6 +268,7 @@ def main():
         "matches": matches,
         "stats": stats,
         "pbp_fouls": pbp_fouls,
+        "finals": finals,
     }
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)

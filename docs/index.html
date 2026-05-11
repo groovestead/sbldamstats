@@ -104,7 +104,7 @@ footer.site a { color: #6cb6ff; }
   <div class="row">
     <h1><a id="home-link">SBL Dam stats</a></h1>
     <div class="search">
-      <input type="text" id="search" placeholder="Sök spelare (förnamn eller efternamn)" autocomplete="off">
+      <input type="text" id="search" placeholder="Sök spelare eller lag…" autocomplete="off">
     </div>
   </div>
 </header>
@@ -129,6 +129,8 @@ let MATCHES_BY_ID = {};   // {match_id: matchObj}
 let PLAYERS_BY_KEY = {};  // {player_key: playerObj}
 let FIELD_INDEX = {};     // {fieldName: index in stat row}
 let PBP_FOULS = {};       // {"player_key:match_id": [off, tech, unsport]}
+let TEAMS_DATA = {};      // {teamName: {name, seasons:[{year,wins,losses,ptsFor,ptsAgainst,games}]}}
+let FINALS = [];          // [{year, champion, finalist, aborted}]
 
 const $main = document.getElementById('main');
 const $search = document.getElementById('search');
@@ -166,6 +168,30 @@ async function load() {
   // Sortera varje spelares matcher fallande på match_id (proxy för datum)
   for (const key in STATS_BY_PLAYER) {
     STATS_BY_PLAYER[key].sort((a, b) => b[FIELD_INDEX.match_id] - a[FIELD_INDEX.match_id]);
+  }
+
+  // Bygg lagindex från matcher
+  FINALS = DATA.finals || [];
+  const _teamSeasons = {};
+  for (const m of DATA.matches) {
+    if (m.hs == null || m.as == null) continue;
+    for (const [team, isHome] of [[m.home, true], [m.away, false]]) {
+      if (!team) continue;
+      const k = team + '|' + m.year;
+      if (!_teamSeasons[k]) _teamSeasons[k] = {team, year: m.year, wins: 0, losses: 0, ptsFor: 0, ptsAgainst: 0, games: 0};
+      const ts = _teamSeasons[k];
+      const myScore = isHome ? m.hs : m.as;
+      const oppScore = isHome ? m.as : m.hs;
+      ts.ptsFor += myScore; ts.ptsAgainst += oppScore; ts.games++;
+      if (myScore > oppScore) ts.wins++; else ts.losses++;
+    }
+  }
+  for (const ts of Object.values(_teamSeasons)) {
+    if (!TEAMS_DATA[ts.team]) TEAMS_DATA[ts.team] = {name: ts.team, seasons: []};
+    TEAMS_DATA[ts.team].seasons.push(ts);
+  }
+  for (const td of Object.values(TEAMS_DATA)) {
+    td.seasons.sort((a, b) => b.year - a.year);
   }
 
   $meta.textContent = ' · ' + DATA.meta.player_count + ' spelare, ' +
@@ -234,6 +260,9 @@ function route() {
   if (hash.startsWith('#/player/')) {
     const key = decodeURIComponent(hash.substring('#/player/'.length));
     renderPlayerPage(key);
+  } else if (hash.startsWith('#/team/')) {
+    const name = decodeURIComponent(hash.substring('#/team/'.length));
+    renderTeamPage(name);
   } else {
     renderSearchPage($search.value);
   }
@@ -241,6 +270,10 @@ function route() {
 
 function navigateToPlayer(key) {
   location.hash = '#/player/' + encodeURIComponent(key);
+}
+
+function navigateToTeam(name) {
+  location.hash = '#/team/' + encodeURIComponent(name);
 }
 
 function navigateHome() {
@@ -290,52 +323,111 @@ function getLatestTeam(playerKey) {
 // Render: söksida
 // =============================================================================
 
-function renderSearchPage(query) {
-  if (!query || !query.trim()) {
-    $main.innerHTML = `
-      <div class="empty">
-        <p>Sök efter en spelare i rutan ovan.<br>Du kan skriva för- eller efternamn.</p>
-        <p class="muted" style="margin-top:24px;font-size:13px">
-          Verktyget täcker säsongerna 2021–2025 och uppdateras automatiskt
-          dagligen när nya matcher har spelats.
-        </p>
-      </div>`;
-    return;
-  }
+function searchTeams(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return Object.values(TEAMS_DATA)
+    .filter(td => td.name.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const aStarts = a.name.toLowerCase().startsWith(q);
+      const bStarts = b.name.toLowerCase().startsWith(q);
+      if (aStarts !== bStarts) return aStarts ? -1 : 1;
+      const aTot = a.seasons.reduce((s, x) => s + x.games, 0);
+      const bTot = b.seasons.reduce((s, x) => s + x.games, 0);
+      return bTot - aTot;
+    });
+}
 
-  const results = searchPlayers(query);
-  if (!results.length) {
-    $main.innerHTML = `<div class="empty"><p>Inga spelare hittade för "${escapeHtml(query)}".</p></div>`;
-    return;
-  }
+function teamChampionships(teamName) {
+  return FINALS.filter(f => f.champion === teamName && !f.aborted).length;
+}
 
-  const cards = results.map(p => {
-    const games = (STATS_BY_PLAYER[p.key] || []).length;
-    const team = getLatestTeam(p.key);
+function renderTeamCards(teams) {
+  return teams.map(td => {
+    const gold = teamChampionships(td.name);
+    const latestSeason = td.seasons[0];
     const metaParts = [];
-    if (p.pos) metaParts.push(escapeHtml(p.pos));
-    if (team) metaParts.push(escapeHtml(team));
-    if (games) metaParts.push(games + ' matcher');
-
-    const photo = p.photo
-      ? `<img class="photo" src="${escapeHtml(p.photo)}" alt="" loading="lazy">`
-      : `<div class="photo"></div>`;
-
+    if (latestSeason) metaParts.push('Senast: ' + fmtSeason(latestSeason.year));
+    if (gold) metaParts.push('🏆 ' + gold + ' SM-guld');
     return `
-      <a class="result" href="#/player/${encodeURIComponent(p.key)}">
-        ${photo}
+      <a class="result" href="#/team/${encodeURIComponent(td.name)}">
+        <div class="photo" style="display:flex;align-items:center;justify-content:center;font-size:22px">🏀</div>
         <div>
-          <div class="name">${escapeHtml(fullName(p))}</div>
+          <div class="name">${escapeHtml(td.name)}</div>
           <div class="meta">${metaParts.join(' · ')}</div>
         </div>
       </a>`;
   }).join('');
+}
 
-  $main.innerHTML = `
-    <div class="section">
-      <h2>${results.length} resultat</h2>
-      <div class="results">${cards}</div>
-    </div>`;
+function renderSearchPage(query) {
+  if (!query || !query.trim()) {
+    // Startsida: visa alla lag
+    const allTeams = Object.values(TEAMS_DATA).sort((a, b) => {
+      const ag = teamChampionships(a.name), bg = teamChampionships(b.name);
+      if (ag !== bg) return bg - ag;
+      return a.name.localeCompare(b.name, 'sv');
+    });
+    $main.innerHTML = `
+      <div class="empty" style="margin-bottom:0">
+        <p>Sök efter en spelare eller ett lag i rutan ovan.</p>
+      </div>
+      <div class="section">
+        <h2>Lag (${allTeams.length})</h2>
+        <div class="results">${renderTeamCards(allTeams)}</div>
+      </div>`;
+    return;
+  }
+
+  const players = searchPlayers(query);
+  const teams = searchTeams(query);
+
+  if (!players.length && !teams.length) {
+    $main.innerHTML = `<div class="empty"><p>Inga spelare eller lag hittade för "${escapeHtml(query)}".</p></div>`;
+    return;
+  }
+
+  let html = '';
+
+  if (teams.length) {
+    html += `
+      <div class="section">
+        <h2>${teams.length} lag</h2>
+        <div class="results">${renderTeamCards(teams)}</div>
+      </div>`;
+  }
+
+  if (players.length) {
+    const cards = players.map(p => {
+      const games = (STATS_BY_PLAYER[p.key] || []).length;
+      const team = getLatestTeam(p.key);
+      const metaParts = [];
+      if (p.pos) metaParts.push(escapeHtml(p.pos));
+      if (team) metaParts.push(escapeHtml(team));
+      if (games) metaParts.push(games + ' matcher');
+
+      const photo = p.photo
+        ? `<img class="photo" src="${escapeHtml(p.photo)}" alt="" loading="lazy">`
+        : `<div class="photo"></div>`;
+
+      return `
+        <a class="result" href="#/player/${encodeURIComponent(p.key)}">
+          ${photo}
+          <div>
+            <div class="name">${escapeHtml(fullName(p))}</div>
+            <div class="meta">${metaParts.join(' · ')}</div>
+          </div>
+        </a>`;
+    }).join('');
+
+    html += `
+      <div class="section">
+        <h2>${players.length} spelare</h2>
+        <div class="results">${cards}</div>
+      </div>`;
+  }
+
+  $main.innerHTML = html;
 }
 
 // =============================================================================
@@ -537,8 +629,12 @@ function teamsByYear(allRows) {
 
 function renderTeamsTable(teams) {
   if (!teams.length) return '';
-  const rows = teams.map(t => `
-    <tr><td>${fmtSeason(t.year)}</td><td>${escapeHtml(t.team)}</td><td>${t.games} matcher</td></tr>`).join('');
+  const rows = teams.map(t => {
+    const teamLink = TEAMS_DATA[t.team]
+      ? `<a href="#/team/${encodeURIComponent(t.team)}">${escapeHtml(t.team)}</a>`
+      : escapeHtml(t.team);
+    return `<tr><td>${fmtSeason(t.year)}</td><td>${teamLink}</td><td>${t.games} matcher</td></tr>`;
+  }).join('');
   return `
     <div class="section">
       <h2>Lag</h2>
@@ -547,6 +643,160 @@ function renderTeamsTable(teams) {
           <thead><tr><th>Säsong</th><th>Lag</th><th>Antal matcher</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
+      </div>
+    </div>`;
+}
+
+// =============================================================================
+// Render: lagsida
+// =============================================================================
+
+function renderTeamPage(teamName) {
+  const td = TEAMS_DATA[teamName];
+  if (!td) {
+    $main.innerHTML = `<div class="empty"><p>Laget finns inte.</p><p><a href="#">← Tillbaka</a></p></div>`;
+    return;
+  }
+
+  // Finals history for this team
+  const finalsAppearances = FINALS.filter(f =>
+    (f.champion === teamName || f.finalist === teamName) && !f.aborted
+  ).sort((a, b) => b.year - a.year);
+  const championships = finalsAppearances.filter(f => f.champion === teamName);
+
+  // Header badges
+  let badgeHtml = '';
+  if (championships.length) badgeHtml += `<span style="font-size:14px;background:#2a2200;color:#ffc53d;border:1px solid #5a4400;border-radius:6px;padding:3px 10px;margin-right:8px">🏆 ${championships.length} SM-guld</span>`;
+  if (finalsAppearances.length > championships.length) {
+    const ruCount = finalsAppearances.length - championships.length;
+    badgeHtml += `<span style="font-size:14px;background:#1a1f2a;color:#9aa3b2;border:1px solid #2a2f3a;border-radius:6px;padding:3px 10px">🥈 ${ruCount} finalist${ruCount > 1 ? 'er' : ''}</span>`;
+  }
+
+  let html = `
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="font-size:48px;line-height:1">🏀</div>
+        <div>
+          <div class="player-name">${escapeHtml(teamName)}</div>
+          <div class="player-meta" style="margin-top:8px">${badgeHtml}</div>
+        </div>
+      </div>
+    </div>`;
+
+  // SM-historia section
+  if (finalsAppearances.length) {
+    const finRows = finalsAppearances.map(f => {
+      const role = f.champion === teamName ? '<span style="color:#ffc53d">🏆 SM-guld</span>' : '<span class="muted">🥈 Finalist</span>';
+      const opp = f.champion === teamName ? f.finalist : f.champion;
+      return `<tr class="match"><td>${f.year}</td><td>${role}</td><td>${escapeHtml(opp)}</td></tr>`;
+    }).join('');
+    html += `
+      <div class="section">
+        <h2>SM-historia</h2>
+        <div class="card scroll-x">
+          <table>
+            <thead><tr><th>År</th><th>Roll</th><th>Mot</th></tr></thead>
+            <tbody>${finRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  // Season records table
+  const seasonRows = td.seasons.map(s => {
+    const ppFor = s.games ? (s.ptsFor / s.games).toFixed(1) : '–';
+    const ppAgainst = s.games ? (s.ptsAgainst / s.games).toFixed(1) : '–';
+    return `
+      <tr class="match">
+        <td>${fmtSeason(s.year)}</td>
+        <td>${s.wins}–${s.losses}</td>
+        <td>${ppFor}</td>
+        <td>${ppAgainst}</td>
+        <td class="muted">${s.games}</td>
+      </tr>`;
+  }).join('');
+  html += `
+    <div class="section">
+      <h2>Säsongsrekord</h2>
+      <div class="card scroll-x">
+        <table>
+          <thead><tr><th>Säsong</th><th>V–F</th><th>Pts/m (för)</th><th>Pts/m (mot)</th><th>Matcher</th></tr></thead>
+          <tbody>${seasonRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  // Current season leaders
+  const latestYear = td.seasons.length ? td.seasons[0].year : null;
+  if (latestYear) {
+    html += renderTeamSeasonLeaders(teamName, latestYear);
+  }
+
+  $main.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+function renderTeamSeasonLeaders(teamName, year) {
+  const teamRows = DATA.stats.filter(r => {
+    const m = MATCHES_BY_ID[get(r, 'match_id')];
+    return m && m.year === year && get(r, 'team_name') === teamName;
+  });
+  if (!teamRows.length) return '';
+
+  // Group by player
+  const byPlayer = {};
+  for (const r of teamRows) {
+    const k = get(r, 'player_key');
+    if (!byPlayer[k]) byPlayer[k] = [];
+    byPlayer[k].push(r);
+  }
+
+  const categories = [
+    {label: 'Poäng', field: 'points'},
+    {label: 'Returer', calc: r => (get(r,'rebounds_def')||0)+(get(r,'rebounds_off')||0)},
+    {label: 'Assists', field: 'assists'},
+    {label: 'Stötar', field: 'steals'},
+    {label: 'Blocks', field: 'blocks'},
+  ];
+
+  const sections = categories.map(cat => {
+    const playerStats = Object.entries(byPlayer).map(([key, rows]) => {
+      const val = cat.calc
+        ? rows.map(cat.calc).reduce((a,b)=>a+b,0) / rows.length
+        : avg(rows, cat.field);
+      const p = PLAYERS_BY_KEY[key];
+      const name = p ? fullName(p) : key;
+      return {key, name, val, games: rows.length};
+    }).filter(x => x.val != null && x.val > 0)
+      .sort((a, b) => b.val - a.val)
+      .slice(0, 5);
+
+    if (!playerStats.length) return '';
+    const rows = playerStats.map((x, i) => {
+      const rank = i + 1;
+      return `<tr class="match">
+        <td class="muted">${rank}</td>
+        <td><a href="#/player/${encodeURIComponent(x.key)}">${escapeHtml(x.name)}</a></td>
+        <td>${x.val.toFixed(1)}</td>
+        <td class="muted">${x.games} m</td>
+      </tr>`;
+    }).join('');
+    return `
+      <div>
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#9aa3b2;margin-bottom:6px">${cat.label}/match</div>
+        <table><thead><tr><th>#</th><th style="text-align:left">Spelare</th><th>Snitt</th><th>Matcher</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>`;
+  }).filter(Boolean).join('');
+
+  if (!sections) return '';
+  return `
+    <div class="section">
+      <h2>Säsong ${fmtSeason(year)} — ligaledare</h2>
+      <div class="card">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:24px">
+          ${sections}
+        </div>
       </div>
     </div>`;
 }
@@ -612,8 +862,8 @@ function renderGameLog(allRows) {
 
 let searchTimer = null;
 $search.addEventListener('input', () => {
-  // Om vi är på en spelarsida, gå tillbaka till sök vid första bokstaven
-  if (location.hash.startsWith('#/player/') && $search.value.trim()) {
+  // Om vi är på en spelare- eller lagsida, gå tillbaka till sök vid första bokstaven
+  if ((location.hash.startsWith('#/player/') || location.hash.startsWith('#/team/')) && $search.value.trim()) {
     location.hash = '';
     return;
   }
