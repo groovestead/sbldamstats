@@ -31,8 +31,7 @@ kommer på saker.
   idag/ikväll med snabblänkar till alla deltagande spelare.
 - [ ] **Lagvy med trupp.** Klicka på ett lag och se alla spelare i
   truppen sorterade efter t.ex. poäng/match.
-- [ ] **Snabbsök med tangentbordsgenväg.** Tryck "/" eller "k"
-  så hoppar fokus direkt till sökrutan. Snabbare under livesändning.
+- [x] **Snabbsök med tangentbordsgenväg.** Tryck "/" för att hoppa fokus direkt till sökrutan. Snabbare under livesändning.
 - [ ] **"Säsongstoppar i ligan".** Vem leder ligan i poäng, returer,
   assists, etc. — färdiga listor du kan referera till live.
 - [ ] **Spelarjämförelse.** Klicka på två spelare och få deras

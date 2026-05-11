@@ -104,7 +104,7 @@ footer.site a { color: #6cb6ff; }
   <div class="row">
     <h1><a id="home-link">SBL Dam stats</a></h1>
     <div class="search">
-      <input type="text" id="search" placeholder="Sök spelare eller lag…" autocomplete="off">
+      <input type="text" id="search" placeholder="Sök spelare eller lag…" autocomplete="off" aria-label="Sök spelare eller lag">
     </div>
   </div>
 </header>
@@ -131,6 +131,7 @@ let FIELD_INDEX = {};     // {fieldName: index in stat row}
 let PBP_FOULS = {};       // {"player_key:match_id": [off, tech, unsport]}
 let TEAMS_DATA = {};      // {teamName: {name, seasons:[{year,wins,losses,ptsFor,ptsAgainst,games}]}}
 let FINALS = [];          // [{year, champion, finalist, aborted}]
+let lastSearch = '';      // bevaras vid navigering tillbaka från spelare/lag-sida
 
 const $main = document.getElementById('main');
 const $search = document.getElementById('search');
@@ -194,9 +195,12 @@ async function load() {
     td.seasons.sort((a, b) => b.year - a.year);
   }
 
+  const years = DATA.matches.map(m => m.year).filter(Boolean);
+  const minYear = Math.min(...years), maxYear = Math.max(...years);
+  const seasonRange = fmtSeason(minYear) + '–' + fmtSeason(maxYear);
   $meta.textContent = ' · ' + DATA.meta.player_count + ' spelare, ' +
-                      DATA.meta.match_count + ' matcher · uppdaterad ' +
-                      DATA.meta.generated_at.substring(0, 10);
+                      DATA.meta.match_count + ' matcher, säsongerna ' + seasonRange +
+                      ' · uppdaterad ' + DATA.meta.generated_at.substring(0, 10);
 
   route();  // visa rätt sida
 }
@@ -269,16 +273,19 @@ function route() {
 }
 
 function navigateToPlayer(key) {
+  lastSearch = $search.value;
   location.hash = '#/player/' + encodeURIComponent(key);
 }
 
 function navigateToTeam(name) {
+  lastSearch = $search.value;
   location.hash = '#/team/' + encodeURIComponent(name);
 }
 
-function navigateHome() {
+function navigateHome(restoreSearch = false) {
   location.hash = '';
-  $search.value = '';
+  $search.value = restoreSearch ? lastSearch : '';
+  if (!restoreSearch) lastSearch = '';
   $search.focus();
 }
 
@@ -407,7 +414,7 @@ function renderSearchPage(query) {
       if (games) metaParts.push(games + ' matcher');
 
       const photo = p.photo
-        ? `<img class="photo" src="${escapeHtml(p.photo)}" alt="" loading="lazy">`
+        ? `<img class="photo" src="${escapeHtml(p.photo)}" alt="${escapeHtml(fullName(p))}" loading="lazy">`
         : `<div class="photo"></div>`;
 
       return `
@@ -434,10 +441,16 @@ function renderSearchPage(query) {
 // Render: spelarsida
 // =============================================================================
 
+function backLink() {
+  const href = lastSearch ? '#' : '#';
+  const label = lastSearch ? `← Tillbaka till "${escapeHtml(lastSearch)}"` : '← Tillbaka';
+  return `<a href="${href}" onclick="navigateHome(true);return false;" style="font-size:13px;color:#9aa3b2">${label}</a>`;
+}
+
 function renderPlayerPage(key) {
   const player = PLAYERS_BY_KEY[key];
   if (!player) {
-    $main.innerHTML = `<div class="empty"><p>Spelaren finns inte.</p><p><a href="#">← Tillbaka</a></p></div>`;
+    $main.innerHTML = `<div class="empty"><p>Spelaren finns inte.</p><p>${backLink()}</p></div>`;
     return;
   }
 
@@ -463,10 +476,11 @@ function renderPlayerPage(key) {
   if (latestTeam) metaParts.push(escapeHtml(latestTeam));
 
   const photo = player.photo
-    ? `<img class="photo" src="${escapeHtml(player.photo)}">`
+    ? `<img class="photo" src="${escapeHtml(player.photo)}" alt="${escapeHtml(fullName(player))}">`
     : `<div class="photo"></div>`;
 
   let html = `
+    <div style="margin-bottom:10px">${backLink()}</div>
     <div class="card">
       <div class="player-grid">
         ${photo}
@@ -673,6 +687,7 @@ function renderTeamPage(teamName) {
   }
 
   let html = `
+    <div style="margin-bottom:10px">${backLink()}</div>
     <div class="card">
       <div style="display:flex;align-items:center;gap:14px">
         <div style="font-size:48px;line-height:1">🏀</div>
@@ -864,13 +879,26 @@ let searchTimer = null;
 $search.addEventListener('input', () => {
   // Om vi är på en spelare- eller lagsida, gå tillbaka till sök vid första bokstaven
   if ((location.hash.startsWith('#/player/') || location.hash.startsWith('#/team/')) && $search.value.trim()) {
+    lastSearch = '';
     location.hash = '';
     return;
   }
   clearTimeout(searchTimer);
   searchTimer = setTimeout(() => {
-    if (DATA) renderSearchPage($search.value);
+    if (DATA) {
+      lastSearch = $search.value;
+      renderSearchPage($search.value);
+    }
   }, 80);
+});
+
+// "/" hoppar fokus till sökrutan (snabbsök under livesändning)
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && document.activeElement !== $search) {
+    e.preventDefault();
+    $search.focus();
+    $search.select();
+  }
 });
 
 // =============================================================================

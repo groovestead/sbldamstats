@@ -15,20 +15,20 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Sätt upp Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.6.0
         with:
           python-version: '3.11'
 
       # Cacha sbl.db mellan körningar så vi inte måste hämta hela
       # historiken varje gång — bara nya matcher
       - name: Cacha databasen
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.3
         with:
           path: sbl.db
-          key: sbl-db-v1
+          key: sbl-db-v2
 
       - name: Hämta nya matcher
         run: python3 fetch_data.py

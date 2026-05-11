@@ -45,6 +45,12 @@ _TEAM_CANON = {
     "udominate (umeå)":              "A3 Basket Umeå",
     "högsbo":                        "Högsbo",
     "högsbo (göteborg)":             "Högsbo",
+    "högsbo basket":                 "Högsbo",
+    "luleå basket":                  "Luleå Basket",          # självmapping — redan kanoniskt
+    "rig luleå":                     "RIG Luleå",
+    "borås basket":                  "Borås Basket",
+    "brahe basket":                  "Brahe Basket",
+    "helsingborg bbk":               "Helsingborg BBK",
 }
 
 # SM-finalhistorik 1958–2025. Källa: Finalhistoria210426_1.xlsx.
@@ -123,13 +129,19 @@ _FINALS_HISTORY = [
 ]
 
 
+_CANON_VALUES = set(_TEAM_CANON.values())
+_unknown_teams: set = set()  # fylls i av canonical_team(); rapporteras i main()
+
 def canonical_team(name):
     """Returnera det kanoniska klubbnamnet, eller originalnamnet om inget finns i mappingen."""
     if not name:
         return name
-    # Om inget kanoniskt namn finns: returnera ändå name.strip() så att
-    # blanksteg i slutet av strängen (från källdata) alltid städas bort.
-    return _TEAM_CANON.get(name.strip().lower(), name.strip())
+    stripped = name.strip()
+    result = _TEAM_CANON.get(stripped.lower(), stripped)
+    # Varna om ett lagnamn varken finns i mappingen eller är ett känt kanoniskt namn.
+    if stripped.lower() not in _TEAM_CANON and stripped not in _CANON_VALUES:
+        _unknown_teams.add(stripped)
+    return result
 
 
 # Fältordningen i den kompakta "stats"-arrayen. Frontenden använder
@@ -280,6 +292,11 @@ def main():
     print(f"Skrev {OUT_FILE.relative_to(ROOT)}")
     print(f"  {len(players)} spelare, {len(matches)} matcher, {len(stats)} statistikrader")
     print(f"  Filstorlek: {size_kb:.1f} KB")
+
+    if _unknown_teams:
+        print(f"\nOkända lagnamn (lägg till i _TEAM_CANON om de är felstavningar):")
+        for t in sorted(_unknown_teams):
+            print(f"  {t!r}")
 
     conn.close()
 
