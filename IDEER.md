@@ -59,9 +59,9 @@ kommer på saker.
   stabila över ligor, så vi skulle kunna följa spelare som rört
   sig mellan ligorna.
 - [ ] **Lägga till Svenska Cupen.** Också samma datakälla.
-- [ ] **Hitta data för säsonger före 2021.** Sannolikt inte möjligt
-  via FIBA LiveStats men kan finnas hos Profixio eller arkiverat
-  hos basket.se. Värt en undersökning.
+- [ ] **Hitta data för säsonger före 2010.** Data finns i Genius Sports
+  tillbaka till 2010 (bekräftat). Äldre säsonger (pre-2010) kan finnas
+  hos Profixio eller basket.se men är ej undersökt.
 - [ ] **Per-match-sida.** Klickbar matchruta som visar fullständigt
   box score, både lag.
 - [ ] **Play-by-play.** Datan finns redan i de råa JSON-filerna —
@@ -82,10 +82,15 @@ kommer på saker.
 
 > Lägg till saker här när du kommer på dem!
 
-- [ ] För kommentering: Ha en sida för pågående matcher som visar trender och intressant statistik i den pågående matchen. 
-- [ ] Finns det data i play-by-play som inte syns i ordinarie box score? Exempelvis: Tekniska fouls, offensiva fouls, eller dragna offensiva fouls. 
+- [ ] För kommentering: Ha en sida för pågående matcher som visar trender och intressant statistik i den pågående matchen.
+- [x] Finns det data i play-by-play som inte syns i ordinarie box score? Exempelvis: Tekniska fouls, offensiva fouls, eller dragna offensiva fouls. **Klart — OF/TF-kolumner implementerade på spelarsidan.**
 - [ ] På spelar- och lagsidar: Visa nyheter från tidningar och sociala medier kopplat till spelaren/laget
+- [ ] **Five-man lineup-statistik.** Beräkna ORTG/DRTG/net rating per unik femmannakombo från PBP-datan.
+  Utforskat och planerat — kräver: lineup state machine (substitution-events), possessions-räknare,
+  aggregering per unik spelarkombo. Implementeras i nytt script `compute_lineups.py` (ren stdlib,
+  ingen pandas/PostgreSQL). Sparas i sbl.db + exporteras till docs/lineups.json. Visas i en ny
+  lagvy i index.html. Utmaningar: härleda startlineups, datakvalitet i PBP, spelar-ID-kollisioner.
 
 ---
 
-*Senast uppdaterad: 2026-05-04*
+*Senast uppdaterad: 2026-05-11*
