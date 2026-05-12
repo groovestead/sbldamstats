@@ -770,7 +770,7 @@ function renderTeamSeasonLeaders(teamName, year) {
     {label: 'Poäng', field: 'points'},
     {label: 'Returer', calc: r => (get(r,'rebounds_def')||0)+(get(r,'rebounds_off')||0)},
     {label: 'Assists', field: 'assists'},
-    {label: 'Stötar', field: 'steals'},
+    {label: 'Steals', field: 'steals'},
     {label: 'Blocks', field: 'blocks'},
   ];
 
@@ -790,16 +790,21 @@ function renderTeamSeasonLeaders(teamName, year) {
     const rows = playerStats.map((x, i) => {
       const rank = i + 1;
       return `<tr class="match">
-        <td class="muted">${rank}</td>
-        <td><a href="#/player/${encodeURIComponent(x.key)}">${escapeHtml(x.name)}</a></td>
-        <td>${x.val.toFixed(1)}</td>
-        <td class="muted">${x.games} m</td>
+        <td class="muted" style="width:20px;padding-right:4px">${rank}</td>
+        <td style="padding-right:10px"><a href="#/player/${encodeURIComponent(x.key)}" style="word-break:break-word">${escapeHtml(x.name)}</a></td>
+        <td style="width:36px">${x.val.toFixed(1)}</td>
+        <td class="muted" style="width:28px">${x.games}</td>
       </tr>`;
     }).join('');
     return `
-      <div>
+      <div style="min-width:0">
         <div style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#9aa3b2;margin-bottom:6px">${cat.label}/match</div>
-        <table><thead><tr><th>#</th><th style="text-align:left">Spelare</th><th>Snitt</th><th>Matcher</th></tr></thead>
+        <table style="table-layout:fixed;width:100%"><thead><tr>
+          <th style="width:20px;padding-right:4px">#</th>
+          <th style="text-align:left">Spelare</th>
+          <th style="width:36px">Snitt</th>
+          <th style="width:28px">M</th>
+        </tr></thead>
         <tbody>${rows}</tbody></table>
       </div>`;
   }).filter(Boolean).join('');
@@ -809,7 +814,7 @@ function renderTeamSeasonLeaders(teamName, year) {
     <div class="section">
       <h2>Säsong ${fmtSeason(year)} — ligaledare</h2>
       <div class="card">
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:24px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:20px;overflow:hidden">
           ${sections}
         </div>
       </div>
