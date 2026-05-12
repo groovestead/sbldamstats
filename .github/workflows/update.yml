@@ -28,7 +28,7 @@ jobs:
         uses: actions/cache@v4.2.3
         with:
           path: sbl.db
-          key: sbl-db-v1
+          key: sbl-db-v2
 
       - name: Hämta nya matcher
         run: python3 fetch_data.py
