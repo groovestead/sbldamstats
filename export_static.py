@@ -22,31 +22,40 @@ OUT_FILE = OUT_DIR / "data.json"
 # Databasen lämnas orörd — normaliseringen sker bara här vid export.
 # Lägg till nya rader om källdatan introducerar fler varianter.
 _TEAM_CANON = {
-    "a3 basket":                     "A3 Basket Umeå",
+    # Umeå-laget under sina olika namn genom åren
+    "a3 basket":                     "Umeå Basket",
+    "a3 basket umeå":                "Umeå Basket",
+    "udominate":                     "Umeå Basket",
+    "udominate (umeå)":              "Umeå Basket",
+    "udominate basket":              "Umeå Basket",
+    "umeå basket":                   "Umeå Basket",            # självmapping
+
     "aik basket":                    "AIK",
     "alviks bbk":                    "Alvik Basket",
+    "alvik basket":                  "Alvik Basket",           # självmapping
     "ik eos":                        "IK Eos",
     "ik eos lund":                   "IK Eos",
     "idrottsklubben eos":            "IK Eos",
     "mark basket":                   "Mark Basket",
     "mark borås":                    "Mark Basket",
     "malbas bbk":                    "Malbas",
-    "norrköping dophins":            "Norrköping Dolphins",   # stavfel i källdata
+    "norrköping dophins":            "Norrköping Dolphins",    # stavfel i källdata
     "norrköpings basketförening":    "Norrköping Dolphins",
     "sbbk dam":                      "Södertälje BBK",
     "södertälje basketbollklubb":    "Södertälje BBK",
+    "telge basket":                  "Södertälje BBK",
+    "sallén basket":                 "Uppsala Basket",
+    "salléns basket":                "Uppsala Basket",
     "uppsala basket dam":            "Uppsala Basket",
     "föreningen uppsala basket dam": "Uppsala Basket",
-    "visby ladies":                  "Visby Ladies",          # hanterar VISBY LADIES via lower()
+    "visby ladies":                  "Visby Ladies",           # hanterar VISBY LADIES via lower()
     "wetterbygden sparks":           "Wetterbygdens Sparks",
     "sjuhärads basketbollförening":  "Sjuhärads Basket",
     "östersunds basket":             "Östersund Basket",
-    "udominate":                     "A3 Basket Umeå",        # tidigare namn
-    "udominate (umeå)":              "A3 Basket Umeå",
     "högsbo":                        "Högsbo",
     "högsbo (göteborg)":             "Högsbo",
     "högsbo basket":                 "Högsbo",
-    "luleå basket":                  "Luleå Basket",          # självmapping — redan kanoniskt
+    "luleå basket":                  "Luleå Basket",           # självmapping
     "rig luleå":                     "RIG Luleå",
     "borås basket":                  "Borås Basket",
     "brahe basket":                  "Brahe Basket",
@@ -64,11 +73,11 @@ _FINALS_HISTORY = [
     (2022, "Norrköping Dolphins", "Luleå Basket",              False),
     (2021, "Luleå Basket",        "Alvik Basket",              False),
     (2020, "Luleå Basket",        "Alvik Basket",              True),  # avbruten (COVID)
-    (2019, "A3 Basket Umeå",      "Högsbo",                    False),
-    (2018, "Luleå Basket",        "A3 Basket Umeå",            False),
-    (2017, "Luleå Basket",        "A3 Basket Umeå",            False),
-    (2016, "Luleå Basket",        "A3 Basket Umeå",            False),
-    (2015, "Luleå Basket",        "A3 Basket Umeå",            False),
+    (2019, "Umeå Basket",         "Högsbo",                    False),
+    (2018, "Luleå Basket",        "Umeå Basket",               False),
+    (2017, "Luleå Basket",        "Umeå Basket",               False),
+    (2016, "Luleå Basket",        "Umeå Basket",               False),
+    (2015, "Luleå Basket",        "Umeå Basket",               False),
     (2014, "Luleå Basket",        "Norrköping Dolphins",       False),
     (2013, "Norrköping Dolphins", "Solna BK",                  False),
     (2012, "Södertälje BBK",      "Luleå Basket",              False),
