@@ -34,7 +34,7 @@ kommer på saker.
 - [x] **Snabbsök med tangentbordsgenväg.** Tryck "/" för att hoppa fokus direkt till sökrutan. Snabbare under livesändning.
 - [ ] **"Säsongstoppar i ligan".** Vem leder ligan i poäng, returer,
   assists, etc. — färdiga listor du kan referera till live.
-- [ ] **Spelarjämförelse.** Klicka på två spelare och få deras
+- [x] **Spelarjämförelse.** Klicka på två spelare och få deras
   statistik sida vid sida.
 - [ ] **Karriärbäst-markeringar.** På spelarens game log: markera
   med en symbol om hon slog ett karriärbäst i någon kategori den
