@@ -91,8 +91,22 @@ footer.site a { color: #6cb6ff; }
 
 .scroll-x { overflow-x: auto; }
 
+.cmp-player-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.cmp-banner {
+  background: #0d1f35; border: 1px solid #1a4a7a; border-radius: 8px;
+  padding: 10px 14px; margin-bottom: 14px; display: flex; align-items: center; gap: 12px; font-size: 14px;
+}
+.btn-cmp {
+  display: inline-block; margin-top: 10px; padding: 5px 12px; border-radius: 6px;
+  font-size: 13px; background: #1a1f2a; border: 1px solid #2a2f3a; color: #9aa3b2;
+  cursor: pointer; text-decoration: none;
+}
+.btn-cmp:hover { border-color: #6cb6ff; color: #6cb6ff; text-decoration: none; }
+.btn-cmp.active { background: #0d1f35; border-color: #6cb6ff; color: #6cb6ff; }
+
 @media (max-width: 700px) {
   .compare { grid-template-columns: repeat(4, 1fr); }
+  .cmp-player-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
   .player-name { font-size: 22px; }
   th, td { padding: 6px 8px; font-size: 13px; }
 }
@@ -132,6 +146,7 @@ let PBP_FOULS = {};       // {"player_key:match_id": [off, tech, unsport]}
 let TEAMS_DATA = {};      // {teamName: {name, seasons:[{year,wins,losses,ptsFor,ptsAgainst,games}]}}
 let FINALS = [];          // [{year, champion, finalist, aborted}]
 let lastSearch = '';      // bevaras vid navigering tillbaka från spelare/lag-sida
+let COMPARE_KEY = null;   // spelare A i pågående jämförelse
 
 const $main = document.getElementById('main');
 const $search = document.getElementById('search');
@@ -267,6 +282,13 @@ function route() {
   } else if (hash.startsWith('#/team/')) {
     const name = decodeURIComponent(hash.substring('#/team/'.length));
     renderTeamPage(name);
+  } else if (hash.startsWith('#/compare/')) {
+    const rest = hash.substring('#/compare/'.length);
+    const slash = rest.indexOf('/');
+    if (slash > 0) {
+      renderComparePage(decodeURIComponent(rest.substring(0, slash)),
+                        decodeURIComponent(rest.substring(slash + 1)));
+    }
   } else {
     renderSearchPage($search.value);
   }
@@ -280,6 +302,27 @@ function navigateToPlayer(key) {
 function navigateToTeam(name) {
   lastSearch = $search.value;
   location.hash = '#/team/' + encodeURIComponent(name);
+}
+
+function navigateToCompare(key1, key2) {
+  location.hash = '#/compare/' + encodeURIComponent(key1) + '/' + encodeURIComponent(key2);
+}
+
+function cancelCompare() {
+  COMPARE_KEY = null;
+  route();
+}
+
+function handleCompareClick(key) {
+  if (COMPARE_KEY === null) {
+    COMPARE_KEY = key;
+    renderPlayerPage(key);
+  } else if (COMPARE_KEY === key) {
+    COMPARE_KEY = null;
+    renderPlayerPage(key);
+  } else {
+    navigateToCompare(COMPARE_KEY, key);
+  }
 }
 
 function navigateHome(restoreSearch = false) {
@@ -479,14 +522,36 @@ function renderPlayerPage(key) {
     ? `<img class="photo" src="${escapeHtml(player.photo)}" alt="${escapeHtml(fullName(player))}">`
     : `<div class="photo"></div>`;
 
+  // Jämförelseknapp och eventuell banner
+  let compareBanner = '';
+  let cmpBtnLabel = 'Jämför';
+  let cmpBtnClass = 'btn-cmp';
+  if (COMPARE_KEY === key) {
+    cmpBtnLabel = '✕ Avmarkera';
+    cmpBtnClass = 'btn-cmp active';
+  } else if (COMPARE_KEY !== null) {
+    const cmpP = PLAYERS_BY_KEY[COMPARE_KEY];
+    const cmpName = cmpP ? fullName(cmpP) : COMPARE_KEY;
+    cmpBtnLabel = `Jämför med ${escapeHtml(cmpName)} →`;
+    cmpBtnClass = 'btn-cmp active';
+    compareBanner = `
+      <div class="cmp-banner">
+        <span style="color:#6cb6ff">⇄</span>
+        <span>Jämförelse pågår: <strong>${escapeHtml(cmpName)}</strong></span>
+        <button onclick="cancelCompare()" style="margin-left:auto;background:none;border:none;color:#9aa3b2;cursor:pointer;font-size:13px;padding:0">✕ Avbryt</button>
+      </div>`;
+  }
+
   let html = `
     <div style="margin-bottom:10px">${backLink()}</div>
+    ${compareBanner}
     <div class="card">
       <div class="player-grid">
         ${photo}
         <div>
           <div class="player-name">${escapeHtml(fullName(player))}</div>
           <div class="player-meta">${metaParts.join(' · ')}</div>
+          <button class="${cmpBtnClass}" onclick="handleCompareClick('${escapeHtml(key)}')">${cmpBtnLabel}</button>
         </div>
       </div>
     </div>`;
@@ -659,6 +724,179 @@ function renderTeamsTable(teams) {
         </table>
       </div>
     </div>`;
+}
+
+// =============================================================================
+// Render: jämförelsesida
+// =============================================================================
+
+function playerCareerAvg(rows) {
+  const reb = rows.map(r => (get(r,'rebounds_def')||0) + (get(r,'rebounds_off')||0));
+  const rebAvg = reb.length ? reb.reduce((a,b)=>a+b,0)/reb.length : null;
+  const fgMade = rows.reduce((s,r)=>s+(get(r,'fg_made')||0),0);
+  const fgAtt  = rows.reduce((s,r)=>s+(get(r,'fg_att')||0),0);
+  const tpMade = rows.reduce((s,r)=>s+(get(r,'three_made')||0),0);
+  const tpAtt  = rows.reduce((s,r)=>s+(get(r,'three_att')||0),0);
+  const ftMade = rows.reduce((s,r)=>s+(get(r,'ft_made')||0),0);
+  const ftAtt  = rows.reduce((s,r)=>s+(get(r,'ft_att')||0),0);
+  return {
+    pts: avg(rows,'points'), reb: rebAvg,
+    ast: avg(rows,'assists'), stl: avg(rows,'steals'),
+    blk: avg(rows,'blocks'),  tov: avg(rows,'turnovers'),
+    fg:  fgAtt  ? fgMade/fgAtt*100   : null,
+    tp:  tpAtt  ? tpMade/tpAtt*100   : null,
+    ft:  ftAtt  ? ftMade/ftAtt*100   : null,
+    games: rows.length,
+  };
+}
+
+function cmpBar(valA, valB, side) {
+  // side: 'a' = blå höger-utfyllnad, 'b' = orange vänster-utfyllnad
+  const mx = Math.max(valA||0, valB||0);
+  if (!mx) return '<td style="width:80px"></td>';
+  const val = side === 'a' ? (valA||0) : (valB||0);
+  const pct = Math.round(val / mx * 100);
+  const color = side === 'a' ? '#6cb6ff' : '#ff9966';
+  const align = side === 'a' ? 'flex-end' : 'flex-start';
+  return `<td style="width:80px;padding:0 4px">
+    <div style="display:flex;justify-content:${align}">
+      <div style="height:5px;border-radius:3px;background:${color};width:${pct}%;min-width:${pct?2:0}px"></div>
+    </div></td>`;
+}
+
+function renderComparePage(key1, key2) {
+  const p1 = PLAYERS_BY_KEY[key1], p2 = PLAYERS_BY_KEY[key2];
+  if (!p1 || !p2) {
+    $main.innerHTML = `<div class="empty"><p>Kunde inte hitta en eller båda spelarna.</p><p>${backLink()}</p></div>`;
+    return;
+  }
+  const rows1 = STATS_BY_PLAYER[key1] || [];
+  const rows2 = STATS_BY_PLAYER[key2] || [];
+  const s1 = playerCareerAvg(rows1), s2 = playerCareerAvg(rows2);
+
+  // Header: två spelarkort sida vid sida
+  function playerCard(p, s, key, side) {
+    const photo = p.photo
+      ? `<img class="photo" src="${escapeHtml(p.photo)}" alt="${escapeHtml(fullName(p))}" style="width:64px;height:64px;border-radius:10px;object-fit:cover">`
+      : `<div class="photo" style="width:64px;height:64px;border-radius:10px;background:#2a2f3a"></div>`;
+    const color = side === 'a' ? '#6cb6ff' : '#ff9966';
+    return `
+      <div class="card" style="border-color:${color}40">
+        <div style="display:flex;gap:12px;align-items:center">
+          ${photo}
+          <div>
+            <div style="font-weight:700;font-size:18px"><a href="#/player/${encodeURIComponent(key)}">${escapeHtml(fullName(p))}</a></div>
+            <div class="muted" style="font-size:13px;margin-top:2px">${[p.pos, s.games + ' matcher'].filter(Boolean).join(' · ')}</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  let html = `
+    <div style="margin-bottom:10px">${backLink()}</div>
+    <div class="cmp-player-grid" style="margin-bottom:20px">
+      ${playerCard(p1, s1, key1, 'a')}
+      ${playerCard(p2, s2, key2, 'b')}
+    </div>`;
+
+  // Karriärsnitt med staplar
+  const statDefs = [
+    {label:'PTS/m', a:s1.pts,  b:s2.pts,  dec:1},
+    {label:'REB/m', a:s1.reb,  b:s2.reb,  dec:1},
+    {label:'AST/m', a:s1.ast,  b:s2.ast,  dec:1},
+    {label:'STL/m', a:s1.stl,  b:s2.stl,  dec:1},
+    {label:'BLK/m', a:s1.blk,  b:s2.blk,  dec:1},
+    {label:'TOV/m', a:s1.tov,  b:s2.tov,  dec:1},
+    {label:'FG%',   a:s1.fg,   b:s2.fg,   dec:1},
+    {label:'3P%',   a:s1.tp,   b:s2.tp,   dec:1},
+    {label:'FT%',   a:s1.ft,   b:s2.ft,   dec:1},
+  ];
+
+  const statRows = statDefs.filter(d => d.a != null || d.b != null).map(d => {
+    const va = d.a != null ? d.a.toFixed(d.dec) : '–';
+    const vb = d.b != null ? d.b.toFixed(d.dec) : '–';
+    const winA = d.a != null && (d.b == null || d.a > d.b);
+    const winB = d.b != null && (d.a == null || d.b > d.a);
+    // TOV är inverterat — lägre är bättre
+    const invertedWinA = d.label==='TOV/m' && d.a != null && (d.b == null || d.a < d.b);
+    const invertedWinB = d.label==='TOV/m' && d.b != null && (d.a == null || d.b < d.a);
+    const boldA = (d.label!=='TOV/m' && winA) || invertedWinA;
+    const boldB = (d.label!=='TOV/m' && winB) || invertedWinB;
+    return `
+      <tr>
+        <td style="font-weight:${boldA?700:400};color:${boldA?'#6cb6ff':'inherit'}">${va}</td>
+        ${cmpBar(d.a, d.b, 'a')}
+        <td style="text-align:center;color:#9aa3b2;font-size:12px;white-space:nowrap">${d.label}</td>
+        ${cmpBar(d.a, d.b, 'b')}
+        <td style="font-weight:${boldB?700:400};color:${boldB?'#ff9966':'inherit'}">${vb}</td>
+      </tr>`;
+  }).join('');
+
+  html += `
+    <div class="section">
+      <h2>Karriärsnitt — alla säsonger</h2>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px">
+          <span style="color:#6cb6ff;font-weight:600">${escapeHtml(fullName(p1))}</span>
+          <span style="color:#ff9966;font-weight:600">${escapeHtml(fullName(p2))}</span>
+        </div>
+        <div class="scroll-x">
+          <table style="width:100%">
+            <tbody>${statRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+
+  // Säsong för säsong
+  const seasons1 = {}, seasons2 = {};
+  for (const r of rows1) { const m = MATCHES_BY_ID[get(r,'match_id')]; if (m) { if (!seasons1[m.year]) seasons1[m.year]=[]; seasons1[m.year].push(r); } }
+  for (const r of rows2) { const m = MATCHES_BY_ID[get(r,'match_id')]; if (m) { if (!seasons2[m.year]) seasons2[m.year]=[]; seasons2[m.year].push(r); } }
+  const allYears = [...new Set([...Object.keys(seasons1),...Object.keys(seasons2)].map(Number))].sort((a,b)=>b-a);
+
+  if (allYears.length > 1) {
+    const seasonRows = allYears.map(y => {
+      const r1 = seasons1[y], r2 = seasons2[y];
+      const pts1 = r1 ? avg(r1,'points') : null, pts2 = r2 ? avg(r2,'points') : null;
+      const reb1 = r1 ? r1.map(r=>(get(r,'rebounds_def')||0)+(get(r,'rebounds_off')||0)).reduce((a,b)=>a+b,0)/r1.length : null;
+      const reb2 = r2 ? r2.map(r=>(get(r,'rebounds_def')||0)+(get(r,'rebounds_off')||0)).reduce((a,b)=>a+b,0)/r2.length : null;
+      const ast1 = r1 ? avg(r1,'assists') : null, ast2 = r2 ? avg(r2,'assists') : null;
+      const g1 = r1 ? r1.length : 0, g2 = r2 ? r2.length : 0;
+      return `<tr class="match">
+        <td>${fmtSeason(y)}</td>
+        <td style="color:#6cb6ff">${fmt(pts1)}</td><td style="color:#6cb6ff">${fmt(reb1)}</td><td style="color:#6cb6ff">${fmt(ast1)}</td>
+        <td class="muted" style="font-size:12px">${g1 || '–'}</td>
+        <td class="muted" style="border-left:1px solid #2a2f3a"></td>
+        <td class="muted" style="font-size:12px">${g2 || '–'}</td>
+        <td style="color:#ff9966">${fmt(pts2)}</td><td style="color:#ff9966">${fmt(reb2)}</td><td style="color:#ff9966">${fmt(ast2)}</td>
+      </tr>`;
+    }).join('');
+    html += `
+      <div class="section">
+        <h2>Säsong för säsong</h2>
+        <div class="card scroll-x">
+          <table>
+            <thead><tr>
+              <th>Säsong</th>
+              <th colspan="3" style="color:#6cb6ff;text-align:center">${escapeHtml(p1.first)}</th>
+              <th style="font-size:11px">M</th>
+              <th></th>
+              <th style="font-size:11px">M</th>
+              <th colspan="3" style="color:#ff9966;text-align:center">${escapeHtml(p2.first)}</th>
+            </tr>
+            <tr>
+              <th></th>
+              <th>PTS</th><th>REB</th><th>AST</th><th></th><th></th><th></th>
+              <th>PTS</th><th>REB</th><th>AST</th>
+            </tr></thead>
+            <tbody>${seasonRows}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  $main.innerHTML = html;
+  window.scrollTo(0, 0);
 }
 
 // =============================================================================
@@ -882,8 +1120,9 @@ function renderGameLog(allRows) {
 
 let searchTimer = null;
 $search.addEventListener('input', () => {
-  // Om vi är på en spelare- eller lagsida, gå tillbaka till sök vid första bokstaven
-  if ((location.hash.startsWith('#/player/') || location.hash.startsWith('#/team/')) && $search.value.trim()) {
+  // Om vi är på en spelare-, lag- eller jämförelsesida, gå tillbaka till sök vid första bokstaven
+  const onSubpage = location.hash.startsWith('#/player/') || location.hash.startsWith('#/team/') || location.hash.startsWith('#/compare/');
+  if (onSubpage && $search.value.trim()) {
     lastSearch = '';
     location.hash = '';
     return;
