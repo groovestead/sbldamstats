@@ -117,6 +117,7 @@ footer.site a { color: #6cb6ff; }
 <header class="site">
   <div class="row">
     <h1><a id="home-link">SBL Dam stats</a></h1>
+    <a href="#/records" style="font-size:14px;white-space:nowrap;color:#9aa3b2" id="records-link">Rekord</a>
     <div class="search">
       <input type="text" id="search" placeholder="Sök spelare eller lag…" autocomplete="off" aria-label="Sök spelare eller lag">
     </div>
@@ -282,6 +283,8 @@ function route() {
   } else if (hash.startsWith('#/team/')) {
     const name = decodeURIComponent(hash.substring('#/team/'.length));
     renderTeamPage(name);
+  } else if (hash === '#/records') {
+    renderRecordsPage();
   } else if (hash.startsWith('#/compare/')) {
     const rest = hash.substring('#/compare/'.length);
     const slash = rest.indexOf('/');
@@ -894,6 +897,218 @@ function renderComparePage(key1, key2) {
         </div>
       </div>`;
   }
+
+  $main.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+// =============================================================================
+// Render: rekordbok
+// =============================================================================
+
+function renderRecordsPage() {
+  const allYears = DATA.matches.map(m => m.year).filter(Boolean);
+  const currentYear = Math.max(...allYears);
+
+  // Aggregera spelarstatistik per lag och match (lagdag-totaler)
+  const teamMatchAgg = {};
+  for (const r of DATA.stats) {
+    const mid = get(r, 'match_id'), team = get(r, 'team_name');
+    if (!mid || !team) continue;
+    const k = team + '\0' + mid;
+    if (!teamMatchAgg[k]) {
+      const m = MATCHES_BY_ID[mid];
+      teamMatchAgg[k] = {team, matchId: mid, year: m ? m.year : null,
+        date: m ? (m.date_parsed || m.date) : '', pts:0,reb:0,ast:0,stl:0,blk:0,tov:0,fg3:0};
+    }
+    const a = teamMatchAgg[k];
+    a.pts += get(r,'points')    || 0;
+    a.reb += (get(r,'rebounds_def')||0) + (get(r,'rebounds_off')||0);
+    a.ast += get(r,'assists')   || 0;
+    a.stl += get(r,'steals')    || 0;
+    a.blk += get(r,'blocks')    || 0;
+    a.tov += get(r,'turnovers') || 0;
+    a.fg3 += get(r,'three_made')|| 0;
+  }
+  const teamGames = Object.values(teamMatchAgg);
+  for (const tg of teamGames) {
+    const m = MATCHES_BY_ID[tg.matchId];
+    tg.opp = m ? (tg.team === m.home ? m.away : m.home) : '';
+  }
+
+  // Spelarsnitt per säsong
+  function playerSeasonStats(filterYear) {
+    const byPS = {};
+    for (const r of DATA.stats) {
+      const m = MATCHES_BY_ID[get(r,'match_id')];
+      if (!m || (filterYear && m.year !== filterYear)) continue;
+      const k = get(r,'player_key') + '\0' + m.year;
+      if (!byPS[k]) byPS[k] = {pkey: get(r,'player_key'), team: get(r,'team_name'), year: m.year, rows: []};
+      byPS[k].rows.push(r);
+    }
+    return Object.values(byPS).filter(s => s.rows.length >= 3).map(s => {
+      const rebs = s.rows.map(r => (get(r,'rebounds_def')||0)+(get(r,'rebounds_off')||0));
+      return {
+        pkey: s.pkey, team: s.team, year: s.year, games: s.rows.length,
+        pts: avg(s.rows,'points'),
+        reb: rebs.reduce((a,b)=>a+b,0)/rebs.length,
+        ast: avg(s.rows,'assists'),
+        stl: avg(s.rows,'steals'),
+        blk: avg(s.rows,'blocks'),
+        fg3: avg(s.rows,'three_made'),
+      };
+    });
+  }
+
+  // Lagsnitt per säsong
+  function teamSeasonStats(filterYear) {
+    const byTS = {};
+    for (const tg of teamGames) {
+      if (!tg.year || (filterYear && tg.year !== filterYear)) continue;
+      const k = tg.team + '\0' + tg.year;
+      if (!byTS[k]) byTS[k] = {team: tg.team, year: tg.year, games:0, pts:0,reb:0,ast:0,stl:0,blk:0,tov:0,fg3:0};
+      const s = byTS[k]; s.games++;
+      for (const f of ['pts','reb','ast','stl','blk','tov','fg3']) s[f] += tg[f];
+    }
+    return Object.values(byTS).filter(s => s.games >= 5).map(s => ({
+      ...s,
+      pts: s.pts/s.games, reb: s.reb/s.games, ast: s.ast/s.games,
+      stl: s.stl/s.games, blk: s.blk/s.games, tov: s.tov/s.games, fg3: s.fg3/s.games,
+    }));
+  }
+
+  function topN(arr, field, n=5) {
+    return arr.filter(x => x[field] > 0).sort((a,b) => b[field]-a[field]).slice(0,n);
+  }
+
+  function pName(pkey) {
+    const p = PLAYERS_BY_KEY[pkey];
+    return p ? fullName(p) : pkey;
+  }
+
+  // Extrahera värde ur en stat-rad för en given kategori
+  function extractVal(r, cat) {
+    if (cat === 'reb') return (get(r,'rebounds_def')||0)+(get(r,'rebounds_off')||0);
+    if (cat === 'fg3') return get(r,'three_made') || 0;
+    return get(r, cat) || 0;
+  }
+
+  function miniTable(title, rows, headers) {
+    if (!rows.length) return '';
+    const ths = headers.map((h,i) => `<th${i===headers.length-1?' style="text-align:right"':''}>${h}</th>`).join('');
+    return `
+      <div style="min-width:0">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#9aa3b2;margin-bottom:6px">${title}</div>
+        <table style="table-layout:fixed;width:100%">
+          <thead><tr>${ths}</tr></thead>
+          <tbody>${rows.join('')}</tbody>
+        </table>
+      </div>`;
+  }
+
+  function recordGrid(tables) {
+    const valid = tables.filter(Boolean);
+    if (!valid.length) return '';
+    return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:20px">${valid.join('')}</div>`;
+  }
+
+  // Spelare snitt
+  function playerAvgTable(data, cat, title, showSeason) {
+    const rows = topN(data, cat).map((r,i) => {
+      const detail = showSeason ? `<td class="muted" style="font-size:11px">${fmtSeason(r.year)}</td>` : '';
+      return `<tr class="match">
+        <td class="muted" style="width:18px">${i+1}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <a href="#/player/${encodeURIComponent(r.pkey)}">${escapeHtml(pName(r.pkey))}</a></td>
+        ${detail}
+        <td style="text-align:right;font-weight:600">${r[cat].toFixed(1)}</td>
+      </tr>`;
+    });
+    return miniTable(title, rows, showSeason ? ['#','Spelare','Säsong','Snitt'] : ['#','Spelare','Snitt']);
+  }
+
+  // Spelare enskild match
+  function playerGameTable(statsArr, cat, title) {
+    const mapped = statsArr.map(r => {
+      const val = extractVal(r, cat);
+      const mid = get(r,'match_id');
+      const m = MATCHES_BY_ID[mid];
+      const opp = m ? (get(r,'team_name')===m.home ? m.away : m.home) : '';
+      return {pkey: get(r,'player_key'), val, opp};
+    }).filter(x => x.val > 0);
+    const rows = topN(mapped, 'val').map((r,i) => `
+      <tr class="match">
+        <td class="muted" style="width:18px">${i+1}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <a href="#/player/${encodeURIComponent(r.pkey)}">${escapeHtml(pName(r.pkey))}</a></td>
+        <td class="muted" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.opp)}</td>
+        <td style="text-align:right;font-weight:600">${r.val}</td>
+      </tr>`);
+    return miniTable(title, rows, ['#','Spelare','Mot','']);
+  }
+
+  // Lag snitt per säsong
+  function teamAvgTable(data, cat, title) {
+    const rows = topN(data, cat).map((r,i) => `
+      <tr class="match">
+        <td class="muted" style="width:18px">${i+1}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <a href="#/team/${encodeURIComponent(r.team)}">${escapeHtml(r.team)}</a></td>
+        <td class="muted" style="font-size:11px">${fmtSeason(r.year)}</td>
+        <td style="text-align:right;font-weight:600">${r[cat].toFixed(1)}</td>
+      </tr>`);
+    return miniTable(title, rows, ['#','Lag','Säsong','Snitt']);
+  }
+
+  // Lag enskild match
+  function teamGameTable(data, cat, title) {
+    const rows = topN(data, cat).map((r,i) => `
+      <tr class="match">
+        <td class="muted" style="width:18px">${i+1}</td>
+        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <a href="#/team/${encodeURIComponent(r.team)}">${escapeHtml(r.team)}</a></td>
+        <td class="muted" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.opp)}</td>
+        <td style="text-align:right;font-weight:600">${r[cat]}</td>
+      </tr>`);
+    return miniTable(title, rows, ['#','Lag','Mot','']);
+  }
+
+  // Beräkna dataseten
+  const psNow  = playerSeasonStats(currentYear);
+  const psAll  = playerSeasonStats(null);
+  const tsAll  = teamSeasonStats(null);
+  const curStats = DATA.stats.filter(r => { const m = MATCHES_BY_ID[get(r,'match_id')]; return m && m.year === currentYear; });
+  const curTeamGames = teamGames.filter(tg => tg.year === currentYear);
+  const CATS = ['pts','reb','ast','stl','blk','fg3'];
+  const LABELS = {pts:'Poäng', reb:'Returer', ast:'Assists', stl:'Steals', blk:'Blocks', fg3:'Trepoängare'};
+
+  let html = `<div style="margin-bottom:10px">${backLink()}</div>`;
+
+  html += `
+    <div class="section">
+      <h2>Säsong ${fmtSeason(currentYear)} — Spelare, säsongssnitt</h2>
+      <div class="card">${recordGrid(CATS.map(c => playerAvgTable(psNow, c, LABELS[c]+'/match', false)))}</div>
+    </div>
+    <div class="section">
+      <h2>Säsong ${fmtSeason(currentYear)} — Spelare, bästa match</h2>
+      <div class="card">${recordGrid(CATS.map(c => playerGameTable(curStats, c, LABELS[c])))}</div>
+    </div>
+    <div class="section">
+      <h2>Alla tider — Spelare, bästa match</h2>
+      <div class="card">${recordGrid(CATS.map(c => playerGameTable(DATA.stats, c, LABELS[c])))}</div>
+    </div>
+    <div class="section">
+      <h2>Alla tider — Spelare, bäst säsongssnitt</h2>
+      <div class="card">${recordGrid(CATS.map(c => playerAvgTable(psAll, c, LABELS[c]+'/match', true)))}</div>
+    </div>
+    <div class="section">
+      <h2>Alla tider — Lag, bäst säsongssnitt</h2>
+      <div class="card">${recordGrid(['pts','reb','ast','stl','blk'].map(c => teamAvgTable(tsAll, c, LABELS[c]+'/match')))}</div>
+    </div>
+    <div class="section">
+      <h2>Alla tider — Lag, bästa match</h2>
+      <div class="card">${recordGrid(['pts','reb','ast','stl','blk'].map(c => teamGameTable(teamGames, c, LABELS[c])))}</div>
+    </div>`;
 
   $main.innerHTML = html;
   window.scrollTo(0, 0);
