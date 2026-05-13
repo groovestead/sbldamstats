@@ -148,6 +148,7 @@ let TEAMS_DATA = {};      // {teamName: {name, seasons:[{year,wins,losses,ptsFor
 let FINALS = [];          // [{year, champion, finalist, aborted}]
 let lastSearch = '';      // bevaras vid navigering tillbaka från spelare/lag-sida
 let COMPARE_KEY = null;   // spelare A i pågående jämförelse
+let recordsTab = 'current'; // 'current' | 'alltime'
 
 const $main = document.getElementById('main');
 const $search = document.getElementById('search');
@@ -910,7 +911,7 @@ function renderRecordsPage() {
   const allYears = DATA.matches.map(m => m.year).filter(Boolean);
   const currentYear = Math.max(...allYears);
 
-  // Aggregera spelarstatistik per lag och match (lagdag-totaler)
+  // Lagdag-totaler per match
   const teamMatchAgg = {};
   for (const r of DATA.stats) {
     const mid = get(r, 'match_id'), team = get(r, 'team_name');
@@ -919,7 +920,7 @@ function renderRecordsPage() {
     if (!teamMatchAgg[k]) {
       const m = MATCHES_BY_ID[mid];
       teamMatchAgg[k] = {team, matchId: mid, year: m ? m.year : null,
-        date: m ? (m.date_parsed || m.date) : '', pts:0,reb:0,ast:0,stl:0,blk:0,tov:0,fg3:0};
+        pts:0, reb:0, ast:0, stl:0, blk:0, tov:0, fg3:0};
     }
     const a = teamMatchAgg[k];
     a.pts += get(r,'points')    || 0;
@@ -936,7 +937,7 @@ function renderRecordsPage() {
     tg.opp = m ? (tg.team === m.home ? m.away : m.home) : '';
   }
 
-  // Spelarsnitt per säsong
+  // Spelarsnitt per säsong (minst 3 matcher)
   function playerSeasonStats(filterYear) {
     const byPS = {};
     for (const r of DATA.stats) {
@@ -960,7 +961,7 @@ function renderRecordsPage() {
     });
   }
 
-  // Lagsnitt per säsong
+  // Lagsnitt per säsong (minst 5 matcher)
   function teamSeasonStats(filterYear) {
     const byTS = {};
     for (const tg of teamGames) {
@@ -986,21 +987,20 @@ function renderRecordsPage() {
     return p ? fullName(p) : pkey;
   }
 
-  // Extrahera värde ur en stat-rad för en given kategori
   function extractVal(r, cat) {
     if (cat === 'reb') return (get(r,'rebounds_def')||0)+(get(r,'rebounds_off')||0);
     if (cat === 'fg3') return get(r,'three_made') || 0;
     return get(r, cat) || 0;
   }
 
-  function miniTable(title, rows, headers) {
+  // --- Renderfunktioner ---
+
+  function miniTable(title, rows) {
     if (!rows.length) return '';
-    const ths = headers.map((h,i) => `<th${i===headers.length-1?' style="text-align:right"':''}>${h}</th>`).join('');
     return `
       <div style="min-width:0">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#9aa3b2;margin-bottom:6px">${title}</div>
-        <table style="table-layout:fixed;width:100%">
-          <thead><tr>${ths}</tr></thead>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#6c7a8c;margin-bottom:8px">${title}</div>
+        <table style="table-layout:fixed;width:100%;border-collapse:collapse">
           <tbody>${rows.join('')}</tbody>
         </table>
       </div>`;
@@ -1009,106 +1009,142 @@ function renderRecordsPage() {
   function recordGrid(tables) {
     const valid = tables.filter(Boolean);
     if (!valid.length) return '';
-    return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:20px">${valid.join('')}</div>`;
+    return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:24px">${valid.join('')}</div>`;
   }
 
-  // Spelare snitt
-  function playerAvgTable(data, cat, title, showSeason) {
+  // Rad för spelarsnitt
+  function playerAvgTable(data, cat, title, showYear) {
     const rows = topN(data, cat).map((r,i) => {
-      const detail = showSeason ? `<td class="muted" style="font-size:11px">${fmtSeason(r.year)}</td>` : '';
-      return `<tr class="match">
-        <td class="muted" style="width:18px">${i+1}</td>
-        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-          <a href="#/player/${encodeURIComponent(r.pkey)}">${escapeHtml(pName(r.pkey))}</a></td>
-        ${detail}
-        <td style="text-align:right;font-weight:600">${r[cat].toFixed(1)}</td>
+      const yearBadge = showYear && r.year
+        ? `<span style="font-size:10px;color:#6c7a8c;margin-left:4px">${fmtSeason(r.year)}</span>`
+        : '';
+      return `<tr>
+        <td style="width:20px;padding:5px 6px 5px 0;color:#6c7a8c;font-size:12px;text-align:left">${i+1}</td>
+        <td style="padding:5px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0">
+          <a href="#/player/${encodeURIComponent(r.pkey)}" style="font-size:13px">${escapeHtml(pName(r.pkey))}</a>${yearBadge}</td>
+        <td style="padding:5px 0 5px 6px;text-align:right;font-weight:700;font-size:14px;width:36px;white-space:nowrap">${r[cat].toFixed(1)}</td>
       </tr>`;
     });
-    return miniTable(title, rows, showSeason ? ['#','Spelare','Säsong','Snitt'] : ['#','Spelare','Snitt']);
+    return miniTable(title, rows);
   }
 
-  // Spelare enskild match
-  function playerGameTable(statsArr, cat, title) {
+  // Rad för spelarrekord enskild match
+  function playerGameTable(statsArr, cat, title, showYear) {
     const mapped = statsArr.map(r => {
       const val = extractVal(r, cat);
       const mid = get(r,'match_id');
       const m = MATCHES_BY_ID[mid];
       const opp = m ? (get(r,'team_name')===m.home ? m.away : m.home) : '';
-      return {pkey: get(r,'player_key'), val, opp};
+      return {pkey: get(r,'player_key'), val, opp, year: m ? m.year : null};
     }).filter(x => x.val > 0);
-    const rows = topN(mapped, 'val').map((r,i) => `
-      <tr class="match">
-        <td class="muted" style="width:18px">${i+1}</td>
-        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-          <a href="#/player/${encodeURIComponent(r.pkey)}">${escapeHtml(pName(r.pkey))}</a></td>
-        <td class="muted" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.opp)}</td>
-        <td style="text-align:right;font-weight:600">${r.val}</td>
-      </tr>`);
-    return miniTable(title, rows, ['#','Spelare','Mot','']);
+    const rows = topN(mapped, 'val').map((r,i) => {
+      const context = showYear && r.year
+        ? `${escapeHtml(r.opp)} <span style="color:#6c7a8c">${fmtSeason(r.year)}</span>`
+        : escapeHtml(r.opp);
+      return `<tr>
+        <td style="width:20px;padding:5px 6px 5px 0;color:#6c7a8c;font-size:12px;text-align:left">${i+1}</td>
+        <td style="padding:5px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0">
+          <div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            <a href="#/player/${encodeURIComponent(r.pkey)}">${escapeHtml(pName(r.pkey))}</a></div>
+          <div style="font-size:11px;color:#9aa3b2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">mot ${context}</div>
+        </td>
+        <td style="padding:5px 0 5px 6px;text-align:right;font-weight:700;font-size:14px;width:36px;white-space:nowrap">${r.val}</td>
+      </tr>`;
+    });
+    return miniTable(title, rows);
   }
 
-  // Lag snitt per säsong
+  // Rad för lagsnitt per säsong
   function teamAvgTable(data, cat, title) {
-    const rows = topN(data, cat).map((r,i) => `
-      <tr class="match">
-        <td class="muted" style="width:18px">${i+1}</td>
-        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-          <a href="#/team/${encodeURIComponent(r.team)}">${escapeHtml(r.team)}</a></td>
-        <td class="muted" style="font-size:11px">${fmtSeason(r.year)}</td>
-        <td style="text-align:right;font-weight:600">${r[cat].toFixed(1)}</td>
-      </tr>`);
-    return miniTable(title, rows, ['#','Lag','Säsong','Snitt']);
+    const rows = topN(data, cat).map((r,i) => `<tr>
+      <td style="width:20px;padding:5px 6px 5px 0;color:#6c7a8c;font-size:12px;text-align:left">${i+1}</td>
+      <td style="padding:5px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0">
+        <div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <a href="#/team/${encodeURIComponent(r.team)}">${escapeHtml(r.team)}</a></div>
+        <div style="font-size:11px;color:#9aa3b2">${fmtSeason(r.year)}</div>
+      </td>
+      <td style="padding:5px 0 5px 6px;text-align:right;font-weight:700;font-size:14px;width:36px;white-space:nowrap">${r[cat].toFixed(1)}</td>
+    </tr>`);
+    return miniTable(title, rows);
   }
 
-  // Lag enskild match
-  function teamGameTable(data, cat, title) {
-    const rows = topN(data, cat).map((r,i) => `
-      <tr class="match">
-        <td class="muted" style="width:18px">${i+1}</td>
-        <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-          <a href="#/team/${encodeURIComponent(r.team)}">${escapeHtml(r.team)}</a></td>
-        <td class="muted" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.opp)}</td>
-        <td style="text-align:right;font-weight:600">${r[cat]}</td>
-      </tr>`);
-    return miniTable(title, rows, ['#','Lag','Mot','']);
+  // Rad för lagrekord enskild match
+  function teamGameTable(data, cat, title, showYear) {
+    const rows = topN(data, cat).map((r,i) => {
+      const context = showYear && r.year
+        ? `${escapeHtml(r.opp)} <span style="color:#6c7a8c">${fmtSeason(r.year)}</span>`
+        : escapeHtml(r.opp);
+      return `<tr>
+        <td style="width:20px;padding:5px 6px 5px 0;color:#6c7a8c;font-size:12px;text-align:left">${i+1}</td>
+        <td style="padding:5px 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0">
+          <div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            <a href="#/team/${encodeURIComponent(r.team)}">${escapeHtml(r.team)}</a></div>
+          <div style="font-size:11px;color:#9aa3b2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">mot ${context}</div>
+        </td>
+        <td style="padding:5px 0 5px 6px;text-align:right;font-weight:700;font-size:14px;width:36px;white-space:nowrap">${r[cat]}</td>
+      </tr>`;
+    });
+    return miniTable(title, rows);
   }
 
-  // Beräkna dataseten
-  const psNow  = playerSeasonStats(currentYear);
-  const psAll  = playerSeasonStats(null);
-  const tsAll  = teamSeasonStats(null);
-  const curStats = DATA.stats.filter(r => { const m = MATCHES_BY_ID[get(r,'match_id')]; return m && m.year === currentYear; });
+  // --- Data ---
+  const psNow      = playerSeasonStats(currentYear);
+  const psAll      = playerSeasonStats(null);
+  const tsAll      = teamSeasonStats(null);
+  const curStats   = DATA.stats.filter(r => { const m = MATCHES_BY_ID[get(r,'match_id')]; return m && m.year === currentYear; });
   const curTeamGames = teamGames.filter(tg => tg.year === currentYear);
-  const CATS = ['pts','reb','ast','stl','blk','fg3'];
+  const CATS  = ['pts','reb','ast','stl','blk','fg3'];
+  const TCATS = ['pts','reb','ast','stl','blk'];
   const LABELS = {pts:'Poäng', reb:'Returer', ast:'Assists', stl:'Steals', blk:'Blocks', fg3:'Trepoängare'};
 
-  let html = `<div style="margin-bottom:10px">${backLink()}</div>`;
+  // --- Tab-bar ---
+  const isCurrent = recordsTab === 'current';
+  const tabStyle = active => `cursor:pointer;padding:6px 14px;border-radius:16px;font-size:13px;font-weight:600;border:none;` +
+    (active ? 'background:#1a3a5c;color:#e8edf4;' : 'background:transparent;color:#9aa3b2;');
 
-  html += `
-    <div class="section">
-      <h2>Säsong ${fmtSeason(currentYear)} — Spelare, säsongssnitt</h2>
-      <div class="card">${recordGrid(CATS.map(c => playerAvgTable(psNow, c, LABELS[c]+'/match', false)))}</div>
-    </div>
-    <div class="section">
-      <h2>Säsong ${fmtSeason(currentYear)} — Spelare, bästa match</h2>
-      <div class="card">${recordGrid(CATS.map(c => playerGameTable(curStats, c, LABELS[c])))}</div>
-    </div>
-    <div class="section">
-      <h2>Alla tider — Spelare, bästa match</h2>
-      <div class="card">${recordGrid(CATS.map(c => playerGameTable(DATA.stats, c, LABELS[c])))}</div>
-    </div>
-    <div class="section">
-      <h2>Alla tider — Spelare, bäst säsongssnitt</h2>
-      <div class="card">${recordGrid(CATS.map(c => playerAvgTable(psAll, c, LABELS[c]+'/match', true)))}</div>
-    </div>
-    <div class="section">
-      <h2>Alla tider — Lag, bäst säsongssnitt</h2>
-      <div class="card">${recordGrid(['pts','reb','ast','stl','blk'].map(c => teamAvgTable(tsAll, c, LABELS[c]+'/match')))}</div>
-    </div>
-    <div class="section">
-      <h2>Alla tider — Lag, bästa match</h2>
-      <div class="card">${recordGrid(['pts','reb','ast','stl','blk'].map(c => teamGameTable(teamGames, c, LABELS[c])))}</div>
+  let html = `
+    <div style="margin-bottom:16px">${backLink()}</div>
+    <div style="margin-bottom:24px">
+      <h1 style="margin:0 0 16px">Rekordbok</h1>
+      <div style="display:flex;gap:4px;background:#161f2e;border-radius:20px;padding:4px;width:fit-content">
+        <button style="${tabStyle(isCurrent)}" onclick="recordsTab='current';renderRecordsPage()">Säsong ${fmtSeason(currentYear)}</button>
+        <button style="${tabStyle(!isCurrent)}" onclick="recordsTab='alltime';renderRecordsPage()">Alla tider</button>
+      </div>
     </div>`;
+
+  if (isCurrent) {
+    html += `
+      <div class="section">
+        <h2>Individuellt — säsongssnitt</h2>
+        <div class="card">${recordGrid(CATS.map(c => playerAvgTable(psNow, c, LABELS[c]+'/match', false)))}</div>
+      </div>
+      <div class="section">
+        <h2>Individuellt — bästa match</h2>
+        <div class="card">${recordGrid(CATS.map(c => playerGameTable(curStats, c, LABELS[c], false)))}</div>
+      </div>
+      <div class="section">
+        <h2>Lag — bästa match</h2>
+        <div class="card">${recordGrid(TCATS.map(c => teamGameTable(curTeamGames, c, LABELS[c], false)))}</div>
+      </div>`;
+  } else {
+    html += `
+      <div class="section">
+        <h2>Individuellt — bäst säsongssnitt</h2>
+        <div class="card">${recordGrid(CATS.map(c => playerAvgTable(psAll, c, LABELS[c]+'/match', true)))}</div>
+      </div>
+      <div class="section">
+        <h2>Individuellt — bästa match</h2>
+        <div class="card">${recordGrid(CATS.map(c => playerGameTable(DATA.stats, c, LABELS[c], true)))}</div>
+      </div>
+      <div class="section">
+        <h2>Lag — bäst säsongssnitt</h2>
+        <div class="card">${recordGrid(TCATS.map(c => teamAvgTable(tsAll, c, LABELS[c]+'/match')))}</div>
+      </div>
+      <div class="section">
+        <h2>Lag — bästa match</h2>
+        <div class="card">${recordGrid(TCATS.map(c => teamGameTable(teamGames, c, LABELS[c], true)))}</div>
+      </div>`;
+  }
 
   $main.innerHTML = html;
   window.scrollTo(0, 0);
