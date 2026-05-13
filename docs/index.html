@@ -129,7 +129,7 @@ footer.site a { color: #6cb6ff; }
 </main>
 
 <footer class="site">
-  Data från FIBA LiveStats / Genius Sports. Verktyget byggt av <a href="https://github.com/groovestead/sbldamstats">groovestead</a>.
+  Data från FIBA LiveStats / Genius Sports. Verktyget byggt av <a href="https://github.com/groovestead/sbldamstats">Johannes Grufstedt</a>.
   <span id="meta"></span>
 </footer>
 
@@ -149,6 +149,8 @@ let FINALS = [];          // [{year, champion, finalist, aborted}]
 let lastSearch = '';      // bevaras vid navigering tillbaka från spelare/lag-sida
 let COMPARE_KEY = null;   // spelare A i pågående jämförelse
 let recordsTab = 'current'; // 'current' | 'alltime'
+let _pKey = null;             // player key currently shown on player page
+let _glSort = {col:null, dir:-1}; // game log sort state
 
 const $main = document.getElementById('main');
 const $search = document.getElementById('search');
@@ -495,6 +497,8 @@ function backLink() {
 }
 
 function renderPlayerPage(key) {
+  if (key !== _pKey) _glSort = {col:null, dir:-1}; // reset sort when navigating to a new player
+  _pKey = key;
   const player = PLAYERS_BY_KEY[key];
   if (!player) {
     $main.innerHTML = `<div class="empty"><p>Spelaren finns inte.</p><p>${backLink()}</p></div>`;
@@ -1310,10 +1314,47 @@ function renderTeamSeasonLeaders(teamName, year) {
     </div>`;
 }
 
-function renderGameLog(allRows) {
-  const recent = allRows.slice(0, 20);
-  if (!recent.length) return '';
-  const rows = recent.map(r => {
+// Sorterbar kolumnrubrik för spelmatchlogg
+function _glTh(col, label, title) {
+  const active = _glSort.col === col;
+  const ind = active ? (_glSort.dir < 0 ? ' ▼' : ' ▲') : '';
+  const color = active ? ';color:#cce5ff' : '';
+  const tt = title ? ` title="${title}"` : '';
+  return `<th onclick="glSort('${col}')" style="cursor:pointer;user-select:none${color}"${tt}>${label}${ind}</th>`;
+}
+
+function glSort(col) {
+  _glSort.dir = _glSort.col === col ? -_glSort.dir : -1;
+  _glSort.col = col;
+  const tb = document.getElementById('gl-body');
+  if (tb) tb.innerHTML = buildGlRows(STATS_BY_PLAYER[_pKey] || []);
+}
+
+function buildGlRows(allRows) {
+  let rows = allRows.slice();
+  const {col, dir} = _glSort;
+  if (col) {
+    rows.sort((a, b) => {
+      let av, bv;
+      if (col === 'reb') {
+        av = (get(a,'rebounds_def')||0)+(get(a,'rebounds_off')||0);
+        bv = (get(b,'rebounds_def')||0)+(get(b,'rebounds_off')||0);
+      } else if (col === 'date') {
+        const ma = MATCHES_BY_ID[get(a,'match_id')], mb = MATCHES_BY_ID[get(b,'match_id')];
+        av = ma ? (ma.date_parsed||'') : '';
+        bv = mb ? (mb.date_parsed||'') : '';
+        return dir * av.localeCompare(bv);
+      } else {
+        av = get(a, col);
+        bv = get(b, col);
+      }
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;   // nulls alltid sist
+      if (bv == null) return -1;
+      return dir * (av - bv);
+    });
+  }
+  return rows.map(r => {
     const m = MATCHES_BY_ID[get(r, 'match_id')];
     if (!m) return '';
     const team = get(r, 'team_name') || '';
@@ -1347,19 +1388,31 @@ function renderGameLog(allRows) {
         <td>${fmtInt(get(r,'plus_minus'))}</td>
       </tr>`;
   }).join('');
+}
 
+function renderGameLog(allRows) {
+  if (!allRows.length) return '';
   return `
     <div class="section">
-      <h2>Senaste matcherna</h2>
+      <h2>Matcher (${allRows.length})</h2>
       <div class="card scroll-x">
         <table>
           <thead><tr>
-            <th>Datum</th><th>Match</th><th>Min</th>
-            <th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TOV</th>
-            <th title="Offensiva fouls">OF</th><th title="Tekniska/osportsliga fouls">TF</th>
-            <th>FG</th><th>3P</th><th>FT</th><th>+/-</th>
+            ${_glTh('date','Datum')}
+            <th style="text-align:left">Match</th>
+            <th>Min</th>
+            ${_glTh('points','PTS')}
+            ${_glTh('reb','REB')}
+            ${_glTh('assists','AST')}
+            ${_glTh('steals','STL')}
+            ${_glTh('blocks','BLK')}
+            ${_glTh('turnovers','TOV')}
+            <th title="Offensiva fouls">OF</th>
+            <th title="Tekniska/osportsliga fouls">TF</th>
+            <th>FG</th><th>3P</th><th>FT</th>
+            ${_glTh('plus_minus','+/-')}
           </tr></thead>
-          <tbody>${rows}</tbody>
+          <tbody id="gl-body">${buildGlRows(allRows)}</tbody>
         </table>
       </div>
     </div>`;
