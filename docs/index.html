@@ -150,6 +150,7 @@ let lastSearch = '';      // bevaras vid navigering tillbaka från spelare/lag-s
 let COMPARE_KEY = null;   // spelare A i pågående jämförelse
 let recordsTab = 'current'; // 'current' | 'alltime'
 let _pKey = null;             // player key currently shown on player page
+let _pSeason = null;          // selected season year (null = all seasons)
 let _glSort = {col:null, dir:-1}; // game log sort state
 
 const $main = document.getElementById('main');
@@ -496,8 +497,33 @@ function backLink() {
   return `<a href="${href}" onclick="navigateHome(true);return false;" style="font-size:13px;color:#9aa3b2">${label}</a>`;
 }
 
+function buildPlayerStats(rows) {
+  return renderRecentVsSeason(rows)
+       + renderSeasonsTable(rows)
+       + renderTeamsTable(teamsByYear(rows))
+       + renderGameLog(rows);
+}
+
+function filterPlayerPage(year) {
+  _pSeason = year;
+  document.querySelectorAll('.p-season-btn').forEach(btn => {
+    const active = year === null ? btn.dataset.year === 'all' : Number(btn.dataset.year) === year;
+    btn.style.background = active ? '#1a3a5c' : 'transparent';
+    btn.style.color     = active ? '#e8edf4'  : '#9aa3b2';
+  });
+  const statsDiv = document.getElementById('player-stats');
+  if (!statsDiv) return;
+  const all = STATS_BY_PLAYER[_pKey] || [];
+  const rows = year ? all.filter(r => {
+    const m = MATCHES_BY_ID[get(r,'match_id')];
+    return m && m.year === year;
+  }) : all;
+  _glSort = {col:null, dir:-1};
+  statsDiv.innerHTML = buildPlayerStats(rows);
+}
+
 function renderPlayerPage(key) {
-  if (key !== _pKey) _glSort = {col:null, dir:-1}; // reset sort when navigating to a new player
+  if (key !== _pKey) { _glSort = {col:null, dir:-1}; _pSeason = null; }
   _pKey = key;
   const player = PLAYERS_BY_KEY[key];
   if (!player) {
@@ -564,17 +590,32 @@ function renderPlayerPage(key) {
       </div>
     </div>`;
 
-  // Senaste 5 matcher vs säsong-snitt
-  html += renderRecentVsSeason(allRows);
+  // Säsongsfilter-knappar
+  const seasons = [...new Set(allRows.map(r => {
+    const m = MATCHES_BY_ID[get(r,'match_id')];
+    return m ? m.year : null;
+  }).filter(Boolean))].sort((a,b) => b-a);
 
-  // Säsongsaggregat
-  html += renderSeasonsTable(allRows);
+  const btnStyle = active =>
+    `cursor:pointer;padding:5px 12px;border-radius:14px;font-size:13px;font-weight:600;border:none;` +
+    (active ? 'background:#1a3a5c;color:#e8edf4;' : 'background:transparent;color:#9aa3b2;');
 
-  // Lag
-  html += renderTeamsTable(teams);
+  const seasonBtns = seasons.map(y =>
+    `<button class="p-season-btn" data-year="${y}" style="${btnStyle(_pSeason===y)}" onclick="filterPlayerPage(${y})">${fmtSeason(y)}</button>`
+  ).join('');
 
-  // Game log
-  html += renderGameLog(allRows);
+  html += `
+    <div style="display:flex;gap:4px;background:#161f2e;border-radius:20px;padding:4px;width:fit-content;flex-wrap:wrap;margin:16px 0 4px">
+      <button class="p-season-btn" data-year="all" style="${btnStyle(_pSeason===null)}" onclick="filterPlayerPage(null)">Alla säsonger</button>
+      ${seasonBtns}
+    </div>`;
+
+  // Stats (filter-uppdaterbara)
+  const filteredRows = _pSeason ? allRows.filter(r => {
+    const m = MATCHES_BY_ID[get(r,'match_id')];
+    return m && m.year === _pSeason;
+  }) : allRows;
+  html += `<div id="player-stats">${buildPlayerStats(filteredRows)}</div>`;
 
   $main.innerHTML = html;
   window.scrollTo(0, 0);
