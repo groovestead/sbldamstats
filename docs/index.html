@@ -446,6 +446,48 @@ function renderTeamCards(teams) {
   }).join('');
 }
 
+function renderTodayMatches() {
+  const today = new Date().toISOString().slice(0, 10); // "2026-05-14"
+  const todayMs = DATA.matches.filter(m => m.date_parsed && m.date_parsed.slice(0,10) === today);
+
+  // Om inga matcher idag, visa närmaste kommande
+  let label = 'Idag';
+  let shown = todayMs;
+  if (!todayMs.length) {
+    const upcoming = DATA.matches
+      .filter(m => m.date_parsed && m.date_parsed > today && m.hs == null)
+      .sort((a,b) => a.date_parsed.localeCompare(b.date_parsed))
+      .slice(0, 4);
+    if (!upcoming.length) return '';
+    shown = upcoming;
+    label = 'Kommande matcher';
+  }
+
+  const hasStats = mid => DATA.stats.some(r => get(r,'match_id') === mid);
+  const rows = shown.map(m => {
+    const finished = m.hs != null && m.as != null;
+    const score = finished
+      ? `<span style="font-size:20px;font-weight:700;font-variant-numeric:tabular-nums">${m.hs} – ${m.as}</span>`
+      : `<span class="muted">vs</span>`;
+    const link = finished && hasStats(m.id)
+      ? `<a href="#/match/${m.id}" style="font-size:13px;margin-left:auto;white-space:nowrap">Box score →</a>`
+      : '';
+    return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #1e2a3a;flex-wrap:wrap">
+      <div style="font-size:13px;color:#9aa3b2;min-width:80px">${escapeHtml(m.date_parsed||m.date||'')}</div>
+      <div style="font-weight:600"><a href="#/team/${encodeURIComponent(m.home)}">${escapeHtml(m.home)}</a></div>
+      ${score}
+      <div style="font-weight:600"><a href="#/team/${encodeURIComponent(m.away)}">${escapeHtml(m.away)}</a></div>
+      ${link}
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="section">
+      <h2>${label}</h2>
+      <div class="card">${rows}</div>
+    </div>`;
+}
+
 function renderSeasonLeaders() {
   const allYears = DATA.matches.map(m => m.year).filter(Boolean);
   const currentYear = Math.max(...allYears);
@@ -515,6 +557,7 @@ function renderSearchPage(query) {
       <div class="empty" style="margin-bottom:0">
         <p>Sök efter en spelare eller ett lag i rutan ovan.</p>
       </div>
+      ${renderTodayMatches()}
       ${renderSeasonLeaders()}
       <div class="section">
         <h2>Lag (${allTeams.length})</h2>
