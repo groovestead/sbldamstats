@@ -315,6 +315,9 @@ function route() {
     renderTeamPage(name);
   } else if (hash === '#/records') {
     renderRecordsPage();
+  } else if (hash.startsWith('#/match/')) {
+    const mid = parseInt(hash.substring('#/match/'.length), 10);
+    if (mid) renderMatchPage(mid);
   } else if (hash.startsWith('#/compare/')) {
     const rest = hash.substring('#/compare/'.length);
     const slash = rest.indexOf('/');
@@ -1096,6 +1099,127 @@ function renderComparePage(key1, key2) {
 }
 
 // =============================================================================
+// Render: matchsida (box score)
+// =============================================================================
+
+function renderMatchPage(matchId) {
+  const m = MATCHES_BY_ID[matchId];
+  if (!m) {
+    $main.innerHTML = `<div class="empty"><p>Matchen finns inte.</p><p>${backLink()}</p></div>`;
+    return;
+  }
+
+  const allRows = DATA.stats.filter(r => get(r,'match_id') === matchId);
+  const homeRows = allRows.filter(r => get(r,'team_name') === m.home);
+  const awayRows = allRows.filter(r => get(r,'team_name') === m.away);
+
+  function boxTable(rows, teamName) {
+    if (!rows.length) return '';
+    // Sortera: starters först (is_starter desc), sedan poäng desc
+    const sorted = rows.slice().sort((a,b) => {
+      const sd = (get(b,'is_starter')||0) - (get(a,'is_starter')||0);
+      return sd || (get(b,'points')||0) - (get(a,'points')||0);
+    });
+
+    let teamPts=0, teamReb=0, teamAst=0, teamStl=0, teamBlk=0, teamTov=0;
+    let teamFgM=0, teamFgA=0, team3M=0, team3A=0, teamFtM=0, teamFtA=0;
+
+    const bodyRows = sorted.map(r => {
+      const pkey = get(r,'player_key');
+      const p = PLAYERS_BY_KEY[pkey];
+      const name = p ? fullName(p) : (pkey || '');
+      const reb = (get(r,'rebounds_def')||0)+(get(r,'rebounds_off')||0);
+      const starter = get(r,'is_starter') ? '●' : '';
+      const pf = getPbpFouls(pkey, matchId);
+      const ofFoul = pf ? pf[0] : 0, tfFoul = pf ? (pf[1]+pf[2]) : 0;
+      teamPts += get(r,'points')||0; teamReb += reb;
+      teamAst += get(r,'assists')||0; teamStl += get(r,'steals')||0;
+      teamBlk += get(r,'blocks')||0; teamTov += get(r,'turnovers')||0;
+      teamFgM += get(r,'fg_made')||0; teamFgA += get(r,'fg_att')||0;
+      team3M  += get(r,'three_made')||0; team3A  += get(r,'three_att')||0;
+      teamFtM += get(r,'ft_made')||0;  teamFtA  += get(r,'ft_att')||0;
+      const efgVal = efg(r), tsVal = ts(r), gmscVal = gmsc(r);
+      return `<tr class="match">
+        <td style="text-align:left;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <span class="muted" style="font-size:11px;margin-right:4px">${starter}</span>
+          <a href="#/player/${encodeURIComponent(pkey)}">${escapeHtml(name)}</a></td>
+        <td>${escapeHtml(get(r,'minutes')||'')}</td>
+        <td><strong>${fmtInt(get(r,'points'))}</strong></td>
+        <td>${fmtInt(reb)}</td>
+        <td>${fmtInt(get(r,'assists'))}</td>
+        <td>${fmtInt(get(r,'steals'))}</td>
+        <td>${fmtInt(get(r,'blocks'))}</td>
+        <td>${fmtInt(get(r,'turnovers'))}</td>
+        <td>${ofFoul||'–'}</td>
+        <td>${fmtInt(get(r,'fg_made'))}/${fmtInt(get(r,'fg_att'))}</td>
+        <td>${fmtInt(get(r,'three_made'))}/${fmtInt(get(r,'three_att'))}</td>
+        <td>${fmtInt(get(r,'ft_made'))}/${fmtInt(get(r,'ft_att'))}</td>
+        <td>${fmtInt(get(r,'plus_minus'))}</td>
+        <td style="color:#a0c4ff">${efgVal!=null?(efgVal*100).toFixed(0)+'%':'–'}</td>
+        <td style="color:#a0c4ff">${fmt(gmscVal)}</td>
+      </tr>`;
+    }).join('');
+
+    const teamLink = TEAMS_DATA[teamName]
+      ? `<a href="#/team/${encodeURIComponent(teamName)}">${escapeHtml(teamName)}</a>`
+      : escapeHtml(teamName);
+
+    const efgTeam = teamFgA ? ((teamFgM + 0.5*team3M)/teamFgA*100).toFixed(0)+'%' : '–';
+    const totRow = `<tr style="font-weight:600;border-top:2px solid #2a3a4a">
+      <td style="text-align:left">Totalt</td>
+      <td></td>
+      <td><strong>${teamPts}</strong></td>
+      <td>${teamReb}</td><td>${teamAst}</td><td>${teamStl}</td>
+      <td>${teamBlk}</td><td>${teamTov}</td><td></td>
+      <td>${teamFgM}/${teamFgA}</td><td>${team3M}/${team3A}</td><td>${teamFtM}/${teamFtA}</td>
+      <td></td><td style="color:#a0c4ff">${efgTeam}</td><td></td>
+    </tr>`;
+
+    return `
+      <div class="section">
+        <h2>${teamLink}</h2>
+        <div class="card scroll-x">
+          <table>
+            <thead><tr>
+              <th style="text-align:left;min-width:120px">Spelare</th>
+              <th>Min</th><th>PTS</th><th>REB</th><th>AST</th>
+              <th>STL</th><th>BLK</th><th>TOV</th>
+              <th title="Offensiva fouls">OF</th>
+              <th>FG</th><th>3P</th><th>FT</th><th>+/-</th>
+              <th title="Effective Field Goal%">eFG%</th>
+              <th title="Game Score">GmSc</th>
+            </tr></thead>
+            <tbody>${bodyRows}${totRow}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  const score = (m.hs != null && m.as != null) ? `${m.hs} – ${m.as}` : '';
+  const dateStr = m.date_parsed || m.date || '';
+
+  let html = `<div style="margin-bottom:16px">${backLink()}</div>
+    <div class="card">
+      <div style="font-size:13px;color:#9aa3b2;margin-bottom:4px">${escapeHtml(dateStr)} · ${escapeHtml(fmtSeason(m.year))}</div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div style="font-size:18px;font-weight:700">
+          <a href="#/team/${encodeURIComponent(m.home)}">${escapeHtml(m.home)}</a>
+        </div>
+        <div style="font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;color:#e8edf4">${score}</div>
+        <div style="font-size:18px;font-weight:700">
+          <a href="#/team/${encodeURIComponent(m.away)}">${escapeHtml(m.away)}</a>
+        </div>
+      </div>
+    </div>`;
+
+  html += boxTable(homeRows, m.home);
+  html += boxTable(awayRows, m.away);
+
+  $main.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+// =============================================================================
 // Render: rekordbok
 // =============================================================================
 
@@ -1567,7 +1691,7 @@ function buildGlRows(allRows) {
     return `
       <tr class="match"${rowStyle}>
         ${starCell}
-        <td>${escapeHtml(m.date || '')}</td>
+        <td><a href="#/match/${mid}" style="color:inherit">${escapeHtml(m.date || '')}</a></td>
         <td class="muted">${result}</td>
         <td>${escapeHtml(get(r,'minutes') || '')}</td>
         <td>${fmtInt(get(r,'points'))}</td>
@@ -1624,7 +1748,7 @@ function renderGameLog(allRows) {
 let searchTimer = null;
 $search.addEventListener('input', () => {
   // Om vi är på en spelare-, lag- eller jämförelsesida, gå tillbaka till sök vid första bokstaven
-  const onSubpage = location.hash.startsWith('#/player/') || location.hash.startsWith('#/team/') || location.hash.startsWith('#/compare/');
+  const onSubpage = location.hash.startsWith('#/player/') || location.hash.startsWith('#/team/') || location.hash.startsWith('#/compare/') || location.hash.startsWith('#/match/');
   if (onSubpage && $search.value.trim()) {
     lastSearch = '';
     location.hash = '';
