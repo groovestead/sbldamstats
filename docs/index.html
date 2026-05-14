@@ -149,9 +149,10 @@ let FINALS = [];          // [{year, champion, finalist, aborted}]
 let lastSearch = '';      // bevaras vid navigering tillbaka från spelare/lag-sida
 let COMPARE_KEY = null;   // spelare A i pågående jämförelse
 let recordsTab = 'current'; // 'current' | 'alltime'
-let _pKey = null;             // player key currently shown on player page
+let _pKey = null;             // current player page key
 let _pSeason = null;          // selected season year (null = all seasons)
 let _glSort = {col:null, dir:-1}; // game log sort state
+let _pBests = {};             // {field: {val, matchId}} for current career/season bests
 
 const $main = document.getElementById('main');
 const $search = document.getElementById('search');
@@ -497,8 +498,55 @@ function backLink() {
   return `<a href="${href}" onclick="navigateHome(true);return false;" style="font-size:13px;color:#9aa3b2">${label}</a>`;
 }
 
+function computeBests(rows) {
+  const BEST_CATS = [
+    {key:'points',    label:'PTS', fn: r => get(r,'points')},
+    {key:'reb',       label:'REB', fn: r => (get(r,'rebounds_def')||0)+(get(r,'rebounds_off')||0)},
+    {key:'assists',   label:'AST', fn: r => get(r,'assists')},
+    {key:'steals',    label:'STL', fn: r => get(r,'steals')},
+    {key:'blocks',    label:'BLK', fn: r => get(r,'blocks')},
+    {key:'three_made',label:'3PT', fn: r => get(r,'three_made')},
+  ];
+  const bests = {};
+  for (const cat of BEST_CATS) {
+    let bestVal = null, bestMid = null;
+    for (const r of rows) {
+      const v = cat.fn(r);
+      if (v != null && (bestVal === null || v > bestVal)) {
+        bestVal = v; bestMid = get(r,'match_id');
+      }
+    }
+    if (bestVal !== null) bests[cat.key] = {val: bestVal, matchId: bestMid, label: cat.label};
+  }
+  return bests;
+}
+
+function renderBestsBox(bests, label) {
+  const cells = Object.values(bests);
+  if (!cells.length) return '';
+  const items = cells.map(b => {
+    const m = MATCHES_BY_ID[b.matchId];
+    const sub = m ? fmtSeason(m.year) : '';
+    return `<div style="text-align:center">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#6c7a8c">${b.label}</div>
+      <div style="font-size:22px;font-weight:700;color:#ffd700;line-height:1.2">${b.val}</div>
+      <div style="font-size:11px;color:#9aa3b2">${sub}</div>
+    </div>`;
+  }).join('');
+  return `
+    <div class="section">
+      <h2>${label}</h2>
+      <div class="card">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:12px 8px">${items}</div>
+      </div>
+    </div>`;
+}
+
 function buildPlayerStats(rows) {
-  return renderRecentVsSeason(rows)
+  _pBests = computeBests(rows);
+  const bestsLabel = _pSeason ? `Säsongen ${fmtSeason(_pSeason)} — bästa match` : 'Karriärbäst';
+  return renderBestsBox(_pBests, bestsLabel)
+       + renderRecentVsSeason(rows)
        + renderSeasonsTable(rows)
        + renderTeamsTable(teamsByYear(rows))
        + renderGameLog(rows);
@@ -1398,6 +1446,7 @@ function buildGlRows(allRows) {
   return rows.map(r => {
     const m = MATCHES_BY_ID[get(r, 'match_id')];
     if (!m) return '';
+    const mid = get(r, 'match_id');
     const team = get(r, 'team_name') || '';
     const ownIsHome = team && team === m.home;
     const opp = ownIsHome ? m.away : m.home;
@@ -1405,13 +1454,18 @@ function buildGlRows(allRows) {
     const reb = (get(r,'rebounds_def')||0) + (get(r,'rebounds_off')||0);
     const result = score ? `${score} mot ${escapeHtml(opp || '')}` : escapeHtml(opp || '');
     const pkey = get(r, 'player_key');
-    const pf = getPbpFouls(pkey, get(r, 'match_id'));
+    const pf = getPbpFouls(pkey, mid);
     const offFoul = pf ? pf[0] : 0;
     const techFoul = pf ? (pf[1] + pf[2]) : 0;
     const ofCell = offFoul ? `<td style="color:#ff8b8b">${offFoul}</td>` : '<td class="muted">0</td>';
     const tfCell = techFoul ? `<td style="color:#ff8b8b">${techFoul}</td>` : '<td class="muted">0</td>';
+    // Markera rad som innehåller karriärbäst/säsongsbäst
+    const isBest = Object.values(_pBests).some(b => b.matchId === mid);
+    const rowStyle = isBest ? ' style="background:#1a1600"' : '';
+    const starCell = isBest ? '<td style="color:#ffd700;width:16px" title="Karriärbäst">★</td>' : '<td style="width:16px"></td>';
     return `
-      <tr class="match">
+      <tr class="match"${rowStyle}>
+        ${starCell}
         <td>${escapeHtml(m.date || '')}</td>
         <td class="muted">${result}</td>
         <td>${escapeHtml(get(r,'minutes') || '')}</td>
@@ -1439,6 +1493,7 @@ function renderGameLog(allRows) {
       <div class="card scroll-x">
         <table>
           <thead><tr>
+            <th style="width:16px"></th>
             ${_glTh('date','Datum')}
             <th style="text-align:left">Match</th>
             <th>Min</th>
