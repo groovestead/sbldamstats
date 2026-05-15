@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NBA Wins Pool</title>
+  <style>
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --surface2:  #21262d;
+      --border:    #30363d;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --c0: #58a6ff;  /* Ogge      – blå   */
+      --c1: #3fb950;  /* Johannes  – grön  */
+      --c2: #f78166;  /* Alexander – orange*/
+      --c3: #d2a8ff;  /* Sören     – lila  */
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: .875rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .logo {
+      font-size: 1.15rem;
+      font-weight: 800;
+      background: linear-gradient(130deg, #58a6ff 0%, #d2a8ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      white-space: nowrap;
+    }
+    nav { display: flex; gap: .375rem; margin-left: auto; }
+    nav button {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: .35rem .9rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: .8125rem;
+      font-weight: 500;
+      transition: border-color .15s, color .15s, background .15s;
+    }
+    nav button:hover    { border-color: var(--muted); color: var(--text); }
+    nav button.active   { background: var(--surface2); border-color: #58a6ff; color: var(--text); }
+
+    /* ── Layout ── */
+    main  { max-width: 1260px; margin: 0 auto; padding: 1.25rem 1rem; }
+    .tab  { display: none; }
+    .tab.active { display: block; }
+
+    /* ── Utility ── */
+    .muted  { color: var(--muted); }
+    .label  { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+    .card   { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+    .btn {
+      display: inline-flex; align-items: center; gap: .35rem;
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      padding: .35rem .9rem; border-radius: 6px; cursor: pointer;
+      font-size: .8125rem; font-weight: 500;
+      transition: border-color .15s, background .15s;
+    }
+    .btn:hover  { border-color: var(--muted); background: var(--surface); }
+    .btn-danger { background: rgba(248,81,73,.15); border-color: #f85149; color: #f85149; }
+    .btn-danger:hover { background: #f85149; color: #fff; }
+
+    /* ── Banner ── */
+    .banner {
+      border-radius: 8px; padding: .625rem 1rem; font-size: .8125rem;
+      margin-bottom: 1rem; display: flex; align-items: center; gap: .5rem;
+    }
+    .banner-green { background: rgba(63,185,80,.12); border: 1px solid #3fb950; color: #3fb950; }
+    .banner-red   { background: rgba(248,81,73,.12);  border: 1px solid #f85149; color: #f85149; }
+
+    /* ════════════════════════════════
+       DRAFT TAB
+    ════════════════════════════════ */
+    .draft-top {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .picker-row   { display: flex; align-items: center; gap: .6rem; font-size: 1rem; font-weight: 700; }
+    .dot          { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+    .pick-counter { color: var(--muted); font-size: .8125rem; margin-left: .25rem; font-weight: 400; }
+
+    .draft-layout {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 1.25rem;
+      align-items: start;
+    }
+    @media (max-width: 860px) { .draft-layout { grid-template-columns: 1fr; } }
+
+    /* Teams grid */
+    .teams-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+      gap: .6rem;
+    }
+    .team-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .7rem .8rem;
+      cursor: pointer;
+      transition: border-color .12s, background .12s, opacity .12s;
+      position: relative;
+      user-select: none;
+    }
+    .team-card:hover:not(.drafted) { background: var(--surface2); }
+    .team-card.drafted { opacity: .4; cursor: default; pointer-events: none; }
+    .team-abbr { font-size: 1.05rem; font-weight: 800; letter-spacing: .02em; }
+    .team-name { font-size: .72rem; color: var(--muted); margin-top: .1rem; line-height: 1.3; }
+    .team-conf { font-size: .62rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-top: .15rem; }
+    .owner-tag {
+      display: inline-block;
+      margin-top: .3rem;
+      padding: .1rem .45rem;
+      border-radius: 4px;
+      font-size: .68rem;
+      font-weight: 700;
+    }
+
+    /* Draft board (sidebar) */
+    .draft-board { display: flex; flex-direction: column; gap: .75rem; }
+    .p-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: .875rem;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .p-card.active { box-shadow: 0 0 0 1px var(--pc); }
+    .p-name {
+      display: flex; align-items: center; gap: .45rem;
+      font-weight: 600; font-size: .9rem; margin-bottom: .5rem;
+    }
+    .p-count { margin-left: auto; color: var(--muted); font-size: .75rem; font-weight: 400; }
+    .p-teams { display: flex; flex-wrap: wrap; gap: .3rem; min-height: 1.5rem; }
+    .pill {
+      padding: .1rem .45rem; border-radius: 4px; font-size: .7rem; font-weight: 700;
+      background: var(--surface2); border: 1px solid var(--border);
+    }
+    .empty-pill {
+      padding: .1rem .45rem; border-radius: 4px; font-size: .7rem;
+      background: var(--surface2); border: 1px dashed var(--border); color: var(--muted);
+    }
+
+    /* Progress bar */
+    .progress-wrap { margin-bottom: 1rem; }
+    .progress-bar-bg {
+      height: 4px; background: var(--surface2); border-radius: 4px; overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #58a6ff, #d2a8ff);
+      border-radius: 4px;
+      transition: width .3s;
+    }
+    .progress-label {
+      display: flex; justify-content: space-between;
+      font-size: .73rem; color: var(--muted); margin-bottom: .35rem;
+    }
+
+    /* ════════════════════════════════
+       STANDINGS TAB
+    ════════════════════════════════ */
+    .standings-header {
+      display: flex; align-items: center; gap: .75rem; margin-bottom: 1.25rem; flex-wrap: wrap;
+    }
+    .last-updated { font-size: .78rem; color: var(--muted); }
+    .standings-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(252px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .s-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem;
+      transition: border-color .15s;
+    }
+    .s-rank      { font-size: 2rem; font-weight: 800; color: var(--muted); margin-bottom: .1rem; }
+    .rank-1      { color: #f1c40f; }
+    .rank-2      { color: #95a5a6; }
+    .rank-3      { color: #e67e22; }
+    .s-card.pos-1 { border-color: #f1c40f55; }
+    .s-card.pos-2 { border-color: #95a5a655; }
+    .s-card.pos-3 { border-color: #e67e2255; }
+    .s-name      { font-size: 1.15rem; font-weight: 700; margin-bottom: .25rem; }
+    .s-wins      { font-size: 2.4rem; font-weight: 800; line-height: 1; margin-bottom: .8rem; }
+    .s-wins small { font-size: .9rem; font-weight: 400; color: var(--muted); }
+    .s-teams     { display: flex; flex-direction: column; gap: .3rem; }
+    .s-team-row  { display: flex; justify-content: space-between; align-items: center; font-size: .78rem; }
+    .s-team-name { color: var(--muted); }
+    .s-team-w    {
+      font-weight: 700; font-size: .73rem;
+      background: var(--surface2); padding: .1rem .4rem; border-radius: 4px;
+    }
+
+    /* ════════════════════════════════
+       TEAMS TAB
+    ════════════════════════════════ */
+    .teams-table-wrap {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      background: var(--surface2);
+      padding: .625rem 1rem;
+      text-align: left;
+      font-size: .72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody td {
+      padding: .55rem 1rem;
+      font-size: .8125rem;
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: var(--surface2); }
+    .conf-badge {
+      background: var(--surface2); border: 1px solid var(--border);
+      padding: .1rem .4rem; border-radius: 4px; font-size: .68rem; color: var(--muted);
+    }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.75); z-index: 500;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.5rem; max-width: 380px; width: 90%;
+    }
+    .modal h3   { margin-bottom: .6rem; }
+    .modal p    { color: var(--muted); font-size: .8125rem; margin-bottom: 1.25rem; line-height: 1.5; }
+    .modal-btns { display: flex; gap: .6rem; justify-content: flex-end; }
+
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: #58a6ff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🏀 NBA Wins Pool</div>
+  <nav>
+    <button id="tab-btn-draft"     onclick="showTab('draft')"     class="active">Draft</button>
+    <button id="tab-btn-standings" onclick="showTab('standings')">Ställning</button>
+    <button id="tab-btn-teams"     onclick="showTab('teams')">Alla lag</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ═══════════ DRAFT TAB ═══════════ -->
+  <div class="tab active" id="tab-draft">
+    <div id="draft-banner"></div>
+
+    <div class="draft-top">
+      <div id="picker-info"></div>
+      <div style="margin-left:auto;display:flex;gap:.5rem">
+        <button class="btn btn-danger" onclick="openResetModal()">Återställ draft</button>
+      </div>
+    </div>
+
+    <div class="progress-wrap">
+      <div class="progress-label">
+        <span id="prog-label">Draft-framsteg</span>
+        <span id="prog-pct">0 / 30</span>
+      </div>
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="prog-fill" style="width:0%"></div></div>
+    </div>
+
+    <div class="draft-layout">
+      <div>
+        <div class="label" style="margin-bottom:.6rem">Klicka på ett lag för att drafta</div>
+        <div class="teams-grid" id="teams-grid"></div>
+      </div>
+      <div class="draft-board" id="draft-board"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ STANDINGS TAB ═══════════ -->
+  <div class="tab" id="tab-standings">
+    <div class="standings-header">
+      <div class="last-updated" id="last-updated">–</div>
+      <button class="btn" onclick="fetchStandings()" id="refresh-btn">↻ Uppdatera</button>
+    </div>
+    <div id="standings-error"></div>
+    <div class="standings-grid" id="standings-grid">
+      <div style="color:var(--muted)">Laddar...</div>
+    </div>
+  </div>
+
+  <!-- ═══════════ TEAMS TAB ═══════════ -->
+  <div class="tab" id="tab-teams">
+    <div id="teams-error"></div>
+    <div class="teams-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Lag</th>
+            <th>Konf</th>
+            <th>V</th>
+            <th>F</th>
+            <th>%</th>
+            <th>Ägare</th>
+          </tr>
+        </thead>
+        <tbody id="teams-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<!-- Reset modal -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h3>Återställ draften?</h3>
+    <p>Alla draftval raderas och det går inte att ångra. Lagens vinster påverkas inte.</p>
+    <div class="modal-btns">
+      <button class="btn" onclick="closeModal()">Avbryt</button>
+      <button class="btn btn-danger" onclick="confirmReset()">Återställ</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ────────────────────────────────────────────────────────────
+//  CONFIG
+// ────────────────────────────────────────────────────────────
+
+const PARTICIPANTS = [
+  { name: 'Ogge',      color: '#58a6ff' },
+  { name: 'Johannes',  color: '#3fb950' },
+  { name: 'Alexander', color: '#f78166' },
+  { name: 'Sören',     color: '#d2a8ff' },
+];
+
+const NBA_TEAMS = [
+  { abbr: 'ATL', name: 'Atlanta Hawks',           conf: 'East' },
+  { abbr: 'BOS', name: 'Boston Celtics',           conf: 'East' },
+  { abbr: 'BKN', name: 'Brooklyn Nets',            conf: 'East' },
+  { abbr: 'CHA', name: 'Charlotte Hornets',        conf: 'East' },
+  { abbr: 'CHI', name: 'Chicago Bulls',            conf: 'East' },
+  { abbr: 'CLE', name: 'Cleveland Cavaliers',      conf: 'East' },
+  { abbr: 'DET', name: 'Detroit Pistons',          conf: 'East' },
+  { abbr: 'IND', name: 'Indiana Pacers',           conf: 'East' },
+  { abbr: 'MIA', name: 'Miami Heat',               conf: 'East' },
+  { abbr: 'MIL', name: 'Milwaukee Bucks',          conf: 'East' },
+  { abbr: 'NYK', name: 'New York Knicks',          conf: 'East' },
+  { abbr: 'ORL', name: 'Orlando Magic',            conf: 'East' },
+  { abbr: 'PHI', name: 'Philadelphia 76ers',       conf: 'East' },
+  { abbr: 'TOR', name: 'Toronto Raptors',          conf: 'East' },
+  { abbr: 'WAS', name: 'Washington Wizards',       conf: 'East' },
+  { abbr: 'DAL', name: 'Dallas Mavericks',         conf: 'West' },
+  { abbr: 'DEN', name: 'Denver Nuggets',           conf: 'West' },
+  { abbr: 'GSW', name: 'Golden State Warriors',    conf: 'West' },
+  { abbr: 'HOU', name: 'Houston Rockets',          conf: 'West' },
+  { abbr: 'LAC', name: 'LA Clippers',              conf: 'West' },
+  { abbr: 'LAL', name: 'Los Angeles Lakers',       conf: 'West' },
+  { abbr: 'MEM', name: 'Memphis Grizzlies',        conf: 'West' },
+  { abbr: 'MIN', name: 'Minnesota Timberwolves',   conf: 'West' },
+  { abbr: 'NOP', name: 'New Orleans Pelicans',     conf: 'West' },
+  { abbr: 'OKC', name: 'Oklahoma City Thunder',    conf: 'West' },
+  { abbr: 'PHX', name: 'Phoenix Suns',             conf: 'West' },
+  { abbr: 'POR', name: 'Portland Trail Blazers',   conf: 'West' },
+  { abbr: 'SAC', name: 'Sacramento Kings',         conf: 'West' },
+  { abbr: 'SAS', name: 'San Antonio Spurs',        conf: 'West' },
+  { abbr: 'UTA', name: 'Utah Jazz',                conf: 'West' },
+];
+
+// ESPN sometimes uses different abbreviations — normalise to our set
+const ESPN_NORM = {
+  'GS':  'GSW', 'NY':  'NYK', 'BK':  'BKN',
+  'NO':  'NOP', 'SA':  'SAS', 'PHO': 'PHX',
+  'WSH': 'WAS', 'NJ':  'BKN', 'CHO': 'CHA',
+  'NOK': 'NOP', 'NOH': 'NOP', 'SBO': 'SAS',
+};
+function normAbbr(a) { return ESPN_NORM[a] || a; }
+
+// Snake draft: 0→1→2→3, 3→2→1→0, repeat
+const DRAFT_ORDER = (() => {
+  const n = PARTICIPANTS.length;
+  return Array.from({ length: NBA_TEAMS.length }, (_, i) => {
+    const round = Math.floor(i / n);
+    const pos   = i % n;
+    return round % 2 === 0 ? pos : (n - 1 - pos);
+  });
+})();
+
+// ────────────────────────────────────────────────────────────
+//  STATE
+// ────────────────────────────────────────────────────────────
+
+let picks = [];          // [{ abbr, pidx }]
+let standings = {};      // abbr → { wins, losses }
+let fetchedAt = null;
+let fetching = false;
+
+function load()  { try { picks = JSON.parse(localStorage.getItem('nba-pool') || '[]'); } catch { picks = []; } }
+function save()  { localStorage.setItem('nba-pool', JSON.stringify(picks)); }
+
+function pickedSet()    { return new Set(picks.map(p => p.abbr)); }
+function currentPidx()  { return picks.length < DRAFT_ORDER.length ? DRAFT_ORDER[picks.length] : -1; }
+function teamsOf(pidx)  { return picks.filter(p => p.pidx === pidx).map(p => p.abbr); }
+
+// ────────────────────────────────────────────────────────────
+//  DRAFT ACTIONS
+// ────────────────────────────────────────────────────────────
+
+function draftTeam(abbr) {
+  const pidx = currentPidx();
+  if (pidx === -1 || pickedSet().has(abbr)) return;
+  picks.push({ abbr, pidx });
+  save();
+  renderDraft();
+}
+
+function confirmReset() {
+  picks = [];
+  save();
+  closeModal();
+  renderDraft();
+  renderStandings();
+  renderTeamsTable();
+}
+
+// ────────────────────────────────────────────────────────────
+//  RENDER: DRAFT
+// ────────────────────────────────────────────────────────────
+
+function renderDraft() {
+  const pidx    = currentPidx();
+  const done    = pidx === -1;
+  const picked  = pickedSet();
+  const n       = picks.length;
+  const total   = NBA_TEAMS.length;
+
+  // Banner
+  const bannerEl = document.getElementById('draft-banner');
+  bannerEl.innerHTML = done
+    ? '<div class="banner banner-green">✓ Draften är klar! Alla 30 lag är draftade.</div>'
+    : '';
+
+  // Picker info
+  const pickerEl = document.getElementById('picker-info');
+  if (done) {
+    pickerEl.innerHTML = '<span class="muted">Draften är avslutad</span>';
+  } else {
+    const p = PARTICIPANTS[pidx];
+    pickerEl.innerHTML = `
+      <div class="picker-row">
+        <div class="dot" style="background:${p.color}"></div>
+        <span>${p.name}</span>
+        <span class="pick-counter">väljer – pick #${n + 1}</span>
+      </div>`;
+  }
+
+  // Progress
+  document.getElementById('prog-pct').textContent   = `${n} / ${total}`;
+  document.getElementById('prog-fill').style.width  = `${(n / total) * 100}%`;
+
+  // Teams grid
+  const grid = document.getElementById('teams-grid');
+  grid.innerHTML = NBA_TEAMS.map(t => {
+    const isDrafted = picked.has(t.abbr);
+    const ownerPick = picks.find(p => p.abbr === t.abbr);
+    const owner     = ownerPick ? PARTICIPANTS[ownerPick.pidx] : null;
+    const borderStyle = owner ? `border-color:${owner.color}55` : '';
+    return `
+      <div class="team-card ${isDrafted ? 'drafted' : ''}"
+           style="${borderStyle}"
+           ${isDrafted ? '' : `onclick="draftTeam('${t.abbr}')"`}>
+        <div class="team-abbr">${t.abbr}</div>
+        <div class="team-name">${t.name}</div>
+        <div class="team-conf">${t.conf}</div>
+        ${owner ? `<div class="owner-tag" style="background:${owner.color}22;color:${owner.color}">${owner.name}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  // Draft board (sidebar)
+  const maxSlots = Math.ceil(total / PARTICIPANTS.length); // 8
+  const board = document.getElementById('draft-board');
+  board.innerHTML = PARTICIPANTS.map((p, idx) => {
+    const teams   = teamsOf(idx);
+    const isActive = idx === pidx && !done;
+    const pills   = teams.map(a => `<div class="pill" style="border-color:${p.color}44">${a}</div>`).join('');
+    const empties = Array.from({ length: maxSlots - teams.length }, () =>
+      '<div class="empty-pill">–</div>').join('');
+    return `
+      <div class="p-card ${isActive ? 'active' : ''}" style="--pc:${p.color};${isActive ? `border-color:${p.color}` : ''}">
+        <div class="p-name">
+          <div class="dot" style="background:${p.color}"></div>
+          ${p.name}
+          <span class="p-count">${teams.length} lag</span>
+        </div>
+        <div class="p-teams">${pills}${empties}</div>
+      </div>`;
+  }).join('');
+}
+
+// ────────────────────────────────────────────────────────────
+//  ESPN API
+// ────────────────────────────────────────────────────────────
+
+async function fetchStandings() {
+  if (fetching) return;
+  fetching = true;
+
+  const luEl      = document.getElementById('last-updated');
+  const errEl     = document.getElementById('standings-error');
+  const refreshBtn = document.getElementById('refresh-btn');
+
+  errEl.innerHTML = '';
+  luEl.innerHTML  = '<span class="spinner"></span> Hämtar data…';
+  refreshBtn.disabled = true;
+
+  try {
+    const res  = await fetch('https://site.api.espn.com/apis/v2/sports/basketball/nba/standings');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    standings = {};
+    for (const conf of (data.children || [])) {
+      for (const entry of (conf.standings?.entries || [])) {
+        const raw  = entry.team?.abbreviation;
+        if (!raw) continue;
+        const abbr = normAbbr(raw);
+        const wins   = entry.stats?.find(s => s.name === 'wins')?.value   ?? 0;
+        const losses = entry.stats?.find(s => s.name === 'losses')?.value ?? 0;
+        standings[abbr] = { wins, losses };
+      }
+    }
+    fetchedAt = new Date();
+    luEl.textContent = `Uppdaterad ${fetchedAt.toLocaleTimeString('sv-SE')}`;
+  } catch (e) {
+    errEl.innerHTML = `<div class="banner banner-red">⚠ Kunde inte hämta NBA-data: ${e.message}</div>`;
+    luEl.textContent = 'Misslyckades';
+  } finally {
+    fetching = false;
+    refreshBtn.disabled = false;
+    renderStandings();
+    renderTeamsTable();
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+//  RENDER: STANDINGS
+// ────────────────────────────────────────────────────────────
+
+function renderStandings() {
+  const gridEl = document.getElementById('standings-grid');
+
+  if (picks.length === 0) {
+    gridEl.innerHTML = '<div class="muted" style="padding:.5rem">Draften har inte börjat. Gå till Draft-fliken för att välja lag.</div>';
+    return;
+  }
+
+  const totals = PARTICIPANTS.map((p, idx) => {
+    const abbrs = teamsOf(idx);
+    const teamRows = abbrs.map(a => ({
+      abbr:   a,
+      name:   NBA_TEAMS.find(t => t.abbr === a)?.name ?? a,
+      wins:   standings[a]?.wins   ?? null,
+      losses: standings[a]?.losses ?? null,
+    })).sort((a, b) => (b.wins ?? -1) - (a.wins ?? -1));
+
+    const totalWins = abbrs.reduce((s, a) => s + (standings[a]?.wins ?? 0), 0);
+    return { p, idx, abbrs, teamRows, totalWins };
+  }).sort((a, b) => b.totalWins - a.totalWins);
+
+  gridEl.innerHTML = totals.map(({ p, teamRows, totalWins }, rank) => {
+    const posClass = rank < 3 ? `pos-${rank + 1}` : '';
+    const rkClass  = rank < 3 ? `rank-${rank + 1}` : '';
+    const rows = teamRows.map(t => `
+      <div class="s-team-row">
+        <span class="s-team-name">${t.name}</span>
+        <span class="s-team-w" style="color:${p.color}">${t.wins ?? '–'}${typeof t.wins === 'number' ? 'V' : ''}</span>
+      </div>`).join('');
+    return `
+      <div class="s-card ${posClass}">
+        <div class="s-rank ${rkClass}">#${rank + 1}</div>
+        <div class="s-name" style="color:${p.color}">${p.name}</div>
+        <div class="s-wins" style="color:${p.color}">${totalWins} <small>vinster</small></div>
+        <div class="s-teams">${rows}</div>
+      </div>`;
+  }).join('');
+}
+
+// ────────────────────────────────────────────────────────────
+//  RENDER: TEAMS TABLE
+// ────────────────────────────────────────────────────────────
+
+function renderTeamsTable() {
+  const tbody = document.getElementById('teams-tbody');
+  const rows  = NBA_TEAMS.map(t => {
+    const sd    = standings[t.abbr];
+    const w     = sd?.wins   ?? null;
+    const l     = sd?.losses ?? null;
+    const pct   = (w !== null && l !== null && (w + l) > 0)
+                  ? (w / (w + l)).toFixed(3).replace('0.', '.')
+                  : '–';
+    const op    = picks.find(p => p.abbr === t.abbr);
+    const owner = op ? PARTICIPANTS[op.pidx] : null;
+    return { t, w, l, pct, owner, sortW: w ?? -1 };
+  }).sort((a, b) => b.sortW - a.sortW);
+
+  tbody.innerHTML = rows.map(({ t, w, l, pct, owner }, i) => `
+    <tr>
+      <td class="muted" style="font-size:.72rem">${i + 1}</td>
+      <td>
+        <strong style="font-family:monospace;font-size:.8rem">${t.abbr}</strong>
+        <span class="muted" style="margin-left:.4rem;font-size:.75rem">${t.name}</span>
+      </td>
+      <td><span class="conf-badge">${t.conf}</span></td>
+      <td style="font-weight:700">${w ?? '–'}</td>
+      <td class="muted">${l ?? '–'}</td>
+      <td class="muted">${pct}</td>
+      <td>${owner
+        ? `<span style="color:${owner.color};font-weight:700">${owner.name}</span>`
+        : '<span class="muted">–</span>'}</td>
+    </tr>`).join('');
+}
+
+// ────────────────────────────────────────────────────────────
+//  NAV
+// ────────────────────────────────────────────────────────────
+
+function showTab(name) {
+  ['draft', 'standings', 'teams'].forEach(n => {
+    document.getElementById(`tab-${n}`).classList.toggle('active', n === name);
+    document.getElementById(`tab-btn-${n}`).classList.toggle('active', n === name);
+  });
+  if (name === 'standings') renderStandings();
+  if (name === 'teams')     renderTeamsTable();
+}
+
+// ────────────────────────────────────────────────────────────
+//  MODAL
+// ────────────────────────────────────────────────────────────
+
+function openResetModal()  { document.getElementById('modal-overlay').classList.add('open'); }
+function closeModal()      { document.getElementById('modal-overlay').classList.remove('open'); }
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+// ────────────────────────────────────────────────────────────
+//  INIT
+// ────────────────────────────────────────────────────────────
+
+load();
+renderDraft();
+fetchStandings();
+</script>
+</body>
+</html>
