@@ -89,7 +89,20 @@ footer.site {
 }
 footer.site a { color: #6cb6ff; }
 
+:root { --hdr: 55px; }
 .scroll-x { overflow-x: auto; }
+
+/* Sticky thead + first column inside horizontally-scrollable tables */
+.scroll-x table thead th {
+  position: sticky; top: var(--hdr); background: #161a22; z-index: 2;
+}
+.scroll-x table th:first-child,
+.scroll-x table td:first-child {
+  position: sticky; left: 0; background: #161a22; z-index: 1;
+  box-shadow: inset -1px 0 0 #2a2f3a;
+}
+.scroll-x table thead th:first-child { z-index: 3; }
+tr.match:hover td:first-child { background: #1a1f2a; }
 
 .cmp-player-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .cmp-banner {
@@ -1848,6 +1861,15 @@ document.addEventListener('keydown', e => {
     $search.select();
   }
 });
+
+// Håll CSS-variabeln --hdr synkad med faktisk headerbredd
+(function syncHdr() {
+  const hdr = document.querySelector('header.site');
+  if (!hdr) return;
+  const update = () => document.documentElement.style.setProperty('--hdr', hdr.offsetHeight + 'px');
+  update();
+  new ResizeObserver(update).observe(hdr);
+})();
 
 // =============================================================================
 // Start
