@@ -129,7 +129,7 @@ footer.site a { color: #6cb6ff; }
 </main>
 
 <footer class="site">
-  Data från FIBA LiveStats / Genius Sports. Verktyget byggt av <a href="https://github.com/groovestead/sbldamstats">groovestead</a>.
+  Data från FIBA LiveStats / Genius Sports. Verktyget byggt av <a href="https://github.com/groovestead/sbldamstats">Johannes Grufstedt</a>.
   <span id="meta"></span>
 </footer>
 
@@ -149,6 +149,10 @@ let FINALS = [];          // [{year, champion, finalist, aborted}]
 let lastSearch = '';      // bevaras vid navigering tillbaka från spelare/lag-sida
 let COMPARE_KEY = null;   // spelare A i pågående jämförelse
 let recordsTab = 'current'; // 'current' | 'alltime'
+let _pKey = null;             // current player page key
+let _pSeason = null;          // selected season year (null = all seasons)
+let _glSort = {col:null, dir:-1}; // game log sort state
+let _pBests = {};             // {field: {val, matchId}} for current career/season bests
 
 const $main = document.getElementById('main');
 const $search = document.getElementById('search');
@@ -267,6 +271,31 @@ function fullName(p) {
   return ((p.first || '') + ' ' + (p.last || '')).trim();
 }
 
+// Avancerade effektivitetsmått (per match)
+function efg(r) {
+  const fga = get(r,'fg_att');
+  if (!fga) return null;
+  return (get(r,'fg_made') + 0.5 * (get(r,'three_made')||0)) / fga;
+}
+function ts(r) {
+  const fga = get(r,'fg_att') || 0, fta = get(r,'ft_att') || 0;
+  const denom = 2 * (fga + 0.44 * fta);
+  return denom ? (get(r,'points') || 0) / denom : null;
+}
+function gmsc(r) {
+  return (get(r,'points')||0)
+    + 0.4*(get(r,'fg_made')||0)
+    - 0.7*(get(r,'fg_att')||0)
+    - 0.4*((get(r,'ft_att')||0)-(get(r,'ft_made')||0))
+    + 0.7*(get(r,'rebounds_off')||0)
+    + 0.3*(get(r,'rebounds_def')||0)
+    + (get(r,'steals')||0)
+    + 0.7*(get(r,'assists')||0)
+    + 0.7*(get(r,'blocks')||0)
+    - 0.4*(get(r,'fouls_personal')||0)
+    - (get(r,'turnovers')||0);
+}
+
 function fmtSeason(year) {
   const y = Number(year);
   return (y % 100) + '/' + String((y + 1) % 100).padStart(2, '0');
@@ -286,6 +315,9 @@ function route() {
     renderTeamPage(name);
   } else if (hash === '#/records') {
     renderRecordsPage();
+  } else if (hash.startsWith('#/match/')) {
+    const mid = parseInt(hash.substring('#/match/'.length), 10);
+    if (mid) renderMatchPage(mid);
   } else if (hash.startsWith('#/compare/')) {
     const rest = hash.substring('#/compare/'.length);
     const slash = rest.indexOf('/');
@@ -414,6 +446,105 @@ function renderTeamCards(teams) {
   }).join('');
 }
 
+function renderTodayMatches() {
+  const today = new Date().toISOString().slice(0, 10); // "2026-05-14"
+  const todayMs = DATA.matches.filter(m => m.date_parsed && m.date_parsed.slice(0,10) === today);
+
+  // Om inga matcher idag, visa närmaste kommande
+  let label = 'Idag';
+  let shown = todayMs;
+  if (!todayMs.length) {
+    const upcoming = DATA.matches
+      .filter(m => m.date_parsed && m.date_parsed > today && m.hs == null)
+      .sort((a,b) => a.date_parsed.localeCompare(b.date_parsed))
+      .slice(0, 4);
+    if (!upcoming.length) return '';
+    shown = upcoming;
+    label = 'Kommande matcher';
+  }
+
+  const hasStats = mid => DATA.stats.some(r => get(r,'match_id') === mid);
+  const rows = shown.map(m => {
+    const finished = m.hs != null && m.as != null;
+    const score = finished
+      ? `<span style="font-size:20px;font-weight:700;font-variant-numeric:tabular-nums">${m.hs} – ${m.as}</span>`
+      : `<span class="muted">vs</span>`;
+    const link = finished && hasStats(m.id)
+      ? `<a href="#/match/${m.id}" style="font-size:13px;margin-left:auto;white-space:nowrap">Box score →</a>`
+      : '';
+    return `<div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #1e2a3a;flex-wrap:wrap">
+      <div style="font-size:13px;color:#9aa3b2;min-width:80px">${escapeHtml(m.date_parsed||m.date||'')}</div>
+      <div style="font-weight:600"><a href="#/team/${encodeURIComponent(m.home)}">${escapeHtml(m.home)}</a></div>
+      ${score}
+      <div style="font-weight:600"><a href="#/team/${encodeURIComponent(m.away)}">${escapeHtml(m.away)}</a></div>
+      ${link}
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="section">
+      <h2>${label}</h2>
+      <div class="card">${rows}</div>
+    </div>`;
+}
+
+function renderSeasonLeaders() {
+  const allYears = DATA.matches.map(m => m.year).filter(Boolean);
+  const currentYear = Math.max(...allYears);
+
+  const byPlayer = {};
+  for (const r of DATA.stats) {
+    const m = MATCHES_BY_ID[get(r,'match_id')];
+    if (!m || m.year !== currentYear) continue;
+    const k = get(r,'player_key');
+    if (!byPlayer[k]) byPlayer[k] = {pkey: k, rows: []};
+    byPlayer[k].rows.push(r);
+  }
+
+  const pStats = Object.values(byPlayer).filter(p => p.rows.length >= 3).map(p => ({
+    pkey: p.pkey, games: p.rows.length,
+    pts: avg(p.rows,'points'),
+    reb: p.rows.reduce((s,r)=>s+(get(r,'rebounds_def')||0)+(get(r,'rebounds_off')||0),0)/p.rows.length,
+    ast: avg(p.rows,'assists'),
+    stl: avg(p.rows,'steals'),
+    blk: avg(p.rows,'blocks'),
+    fg3: avg(p.rows,'three_made'),
+  }));
+
+  function leaderTable(field, title) {
+    const leaders = pStats.filter(p => p[field] > 0).sort((a,b)=>b[field]-a[field]).slice(0,5);
+    if (!leaders.length) return '';
+    const rows = leaders.map((p,i) => {
+      const pl = PLAYERS_BY_KEY[p.pkey];
+      const name = pl ? fullName(pl) : p.pkey;
+      return `<tr>
+        <td style="width:20px;padding:4px 6px 4px 0;color:#6c7a8c;font-size:12px;text-align:left">${i+1}</td>
+        <td style="padding:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0">
+          <a href="#/player/${encodeURIComponent(p.pkey)}" style="font-size:13px">${escapeHtml(name)}</a></td>
+        <td style="padding:4px 0 4px 6px;text-align:right;font-weight:700;font-size:14px;width:36px">${p[field].toFixed(1)}</td>
+      </tr>`;
+    }).join('');
+    return `<div style="min-width:0">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#6c7a8c;margin-bottom:8px">${title}</div>
+      <table style="table-layout:fixed;width:100%"><tbody>${rows}</tbody></table>
+    </div>`;
+  }
+
+  const tables = [
+    leaderTable('pts','Poäng/match'), leaderTable('reb','Returer/match'),
+    leaderTable('ast','Assists/match'), leaderTable('stl','Steals/match'),
+    leaderTable('blk','Blocks/match'), leaderTable('fg3','Trepoängare/match'),
+  ].filter(Boolean).join('');
+
+  return `
+    <div class="section">
+      <h2>Säsong ${fmtSeason(currentYear)} — Ligaledare</h2>
+      <div class="card">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:24px">${tables}</div>
+      </div>
+    </div>`;
+}
+
 function renderSearchPage(query) {
   if (!query || !query.trim()) {
     // Startsida: visa alla lag
@@ -426,6 +557,8 @@ function renderSearchPage(query) {
       <div class="empty" style="margin-bottom:0">
         <p>Sök efter en spelare eller ett lag i rutan ovan.</p>
       </div>
+      ${renderTodayMatches()}
+      ${renderSeasonLeaders()}
       <div class="section">
         <h2>Lag (${allTeams.length})</h2>
         <div class="results">${renderTeamCards(allTeams)}</div>
@@ -494,7 +627,81 @@ function backLink() {
   return `<a href="${href}" onclick="navigateHome(true);return false;" style="font-size:13px;color:#9aa3b2">${label}</a>`;
 }
 
+function computeBests(rows) {
+  const BEST_CATS = [
+    {key:'points',    label:'PTS', fn: r => get(r,'points')},
+    {key:'reb',       label:'REB', fn: r => (get(r,'rebounds_def')||0)+(get(r,'rebounds_off')||0)},
+    {key:'assists',   label:'AST', fn: r => get(r,'assists')},
+    {key:'steals',    label:'STL', fn: r => get(r,'steals')},
+    {key:'blocks',    label:'BLK', fn: r => get(r,'blocks')},
+    {key:'three_made',label:'3PT', fn: r => get(r,'three_made')},
+  ];
+  const bests = {};
+  for (const cat of BEST_CATS) {
+    let bestVal = null, bestMid = null;
+    for (const r of rows) {
+      const v = cat.fn(r);
+      if (v != null && (bestVal === null || v > bestVal)) {
+        bestVal = v; bestMid = get(r,'match_id');
+      }
+    }
+    if (bestVal !== null) bests[cat.key] = {val: bestVal, matchId: bestMid, label: cat.label};
+  }
+  return bests;
+}
+
+function renderBestsBox(bests, label) {
+  const cells = Object.values(bests);
+  if (!cells.length) return '';
+  const items = cells.map(b => {
+    const m = MATCHES_BY_ID[b.matchId];
+    const sub = m ? fmtSeason(m.year) : '';
+    return `<div style="text-align:center">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#6c7a8c">${b.label}</div>
+      <div style="font-size:22px;font-weight:700;color:#ffd700;line-height:1.2">${b.val}</div>
+      <div style="font-size:11px;color:#9aa3b2">${sub}</div>
+    </div>`;
+  }).join('');
+  return `
+    <div class="section">
+      <h2>${label}</h2>
+      <div class="card">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:12px 8px">${items}</div>
+      </div>
+    </div>`;
+}
+
+function buildPlayerStats(rows) {
+  _pBests = computeBests(rows);
+  const bestsLabel = _pSeason ? `Säsongen ${fmtSeason(_pSeason)} — bästa match` : 'Karriärbäst';
+  return renderBestsBox(_pBests, bestsLabel)
+       + renderRecentVsSeason(rows)
+       + renderSeasonsTable(rows)
+       + renderTeamsTable(teamsByYear(rows))
+       + renderGameLog(rows);
+}
+
+function filterPlayerPage(year) {
+  _pSeason = year;
+  document.querySelectorAll('.p-season-btn').forEach(btn => {
+    const active = year === null ? btn.dataset.year === 'all' : Number(btn.dataset.year) === year;
+    btn.style.background = active ? '#1a3a5c' : 'transparent';
+    btn.style.color     = active ? '#e8edf4'  : '#9aa3b2';
+  });
+  const statsDiv = document.getElementById('player-stats');
+  if (!statsDiv) return;
+  const all = STATS_BY_PLAYER[_pKey] || [];
+  const rows = year ? all.filter(r => {
+    const m = MATCHES_BY_ID[get(r,'match_id')];
+    return m && m.year === year;
+  }) : all;
+  _glSort = {col:null, dir:-1};
+  statsDiv.innerHTML = buildPlayerStats(rows);
+}
+
 function renderPlayerPage(key) {
+  if (key !== _pKey) { _glSort = {col:null, dir:-1}; _pSeason = null; }
+  _pKey = key;
   const player = PLAYERS_BY_KEY[key];
   if (!player) {
     $main.innerHTML = `<div class="empty"><p>Spelaren finns inte.</p><p>${backLink()}</p></div>`;
@@ -560,17 +767,32 @@ function renderPlayerPage(key) {
       </div>
     </div>`;
 
-  // Senaste 5 matcher vs säsong-snitt
-  html += renderRecentVsSeason(allRows);
+  // Säsongsfilter-knappar
+  const seasons = [...new Set(allRows.map(r => {
+    const m = MATCHES_BY_ID[get(r,'match_id')];
+    return m ? m.year : null;
+  }).filter(Boolean))].sort((a,b) => b-a);
 
-  // Säsongsaggregat
-  html += renderSeasonsTable(allRows);
+  const btnStyle = active =>
+    `cursor:pointer;padding:5px 12px;border-radius:14px;font-size:13px;font-weight:600;border:none;` +
+    (active ? 'background:#1a3a5c;color:#e8edf4;' : 'background:transparent;color:#9aa3b2;');
 
-  // Lag
-  html += renderTeamsTable(teams);
+  const seasonBtns = seasons.map(y =>
+    `<button class="p-season-btn" data-year="${y}" style="${btnStyle(_pSeason===y)}" onclick="filterPlayerPage(${y})">${fmtSeason(y)}</button>`
+  ).join('');
 
-  // Game log
-  html += renderGameLog(allRows);
+  html += `
+    <div style="display:flex;gap:4px;background:#161f2e;border-radius:20px;padding:4px;width:fit-content;flex-wrap:wrap;margin:16px 0 4px">
+      <button class="p-season-btn" data-year="all" style="${btnStyle(_pSeason===null)}" onclick="filterPlayerPage(null)">Alla säsonger</button>
+      ${seasonBtns}
+    </div>`;
+
+  // Stats (filter-uppdaterbara)
+  const filteredRows = _pSeason ? allRows.filter(r => {
+    const m = MATCHES_BY_ID[get(r,'match_id')];
+    return m && m.year === _pSeason;
+  }) : allRows;
+  html += `<div id="player-stats">${buildPlayerStats(filteredRows)}</div>`;
 
   $main.innerHTML = html;
   window.scrollTo(0, 0);
@@ -660,6 +882,16 @@ function renderSeasonsTable(allRows) {
     }
     const ofCell = totalOff ? `<td style="color:#ff8b8b">${totalOff}</td>` : '<td class="muted">0</td>';
     const tfCell = totalTech ? `<td style="color:#ff8b8b">${totalTech}</td>` : '<td class="muted">0</td>';
+    // Avancerade effektivitetsmått aggregerade över säsongen
+    const fgMadeTot = rs.reduce((s,r)=>s+(get(r,'fg_made')||0),0);
+    const fgAttTot  = rs.reduce((s,r)=>s+(get(r,'fg_att')||0),0);
+    const tpMadeTot = rs.reduce((s,r)=>s+(get(r,'three_made')||0),0);
+    const ptsTot    = rs.reduce((s,r)=>s+(get(r,'points')||0),0);
+    const ftAttTot  = rs.reduce((s,r)=>s+(get(r,'ft_att')||0),0);
+    const efgSeason = fgAttTot ? (fgMadeTot + 0.5*tpMadeTot) / fgAttTot : null;
+    const tsSeason  = (2*(fgAttTot + 0.44*ftAttTot)) ? ptsTot / (2*(fgAttTot + 0.44*ftAttTot)) : null;
+    const gmscVals  = rs.map(r => gmsc(r));
+    const gmscSeason = gmscVals.length ? gmscVals.reduce((a,b)=>a+b,0)/gmscVals.length : null;
     return `
       <tr>
         <td>${fmtSeason(y)}</td>
@@ -676,6 +908,9 @@ function renderSeasonsTable(allRows) {
         <td>${fmt(avg(rs,'three_made'))}/${fmt(avg(rs,'three_att'))}</td>
         <td>${fmt(avg(rs,'ft_made'))}/${fmt(avg(rs,'ft_att'))}</td>
         <td>${fmt(avg(rs,'plus_minus'))}</td>
+        <td style="color:#a0c4ff" title="eFG%">${efgSeason != null ? (efgSeason*100).toFixed(1)+'%' : '–'}</td>
+        <td style="color:#a0c4ff" title="True Shooting%">${tsSeason  != null ? (tsSeason *100).toFixed(1)+'%' : '–'}</td>
+        <td style="color:#a0c4ff" title="Game Score">${fmt(gmscSeason)}</td>
       </tr>`;
   }).join('');
 
@@ -689,6 +924,9 @@ function renderSeasonsTable(allRows) {
             <th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TOV</th>
             <th title="Offensiva fouls (totalt)">OF</th><th title="Tekniska/osportsliga fouls (totalt)">TF</th>
             <th>FG</th><th>3P</th><th>FT</th><th>+/-</th>
+            <th title="Effective Field Goal %">eFG%</th>
+            <th title="True Shooting %">TS%</th>
+            <th title="Game Score">GmSc</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -898,6 +1136,127 @@ function renderComparePage(key1, key2) {
         </div>
       </div>`;
   }
+
+  $main.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+// =============================================================================
+// Render: matchsida (box score)
+// =============================================================================
+
+function renderMatchPage(matchId) {
+  const m = MATCHES_BY_ID[matchId];
+  if (!m) {
+    $main.innerHTML = `<div class="empty"><p>Matchen finns inte.</p><p>${backLink()}</p></div>`;
+    return;
+  }
+
+  const allRows = DATA.stats.filter(r => get(r,'match_id') === matchId);
+  const homeRows = allRows.filter(r => get(r,'team_name') === m.home);
+  const awayRows = allRows.filter(r => get(r,'team_name') === m.away);
+
+  function boxTable(rows, teamName) {
+    if (!rows.length) return '';
+    // Sortera: starters först (is_starter desc), sedan poäng desc
+    const sorted = rows.slice().sort((a,b) => {
+      const sd = (get(b,'is_starter')||0) - (get(a,'is_starter')||0);
+      return sd || (get(b,'points')||0) - (get(a,'points')||0);
+    });
+
+    let teamPts=0, teamReb=0, teamAst=0, teamStl=0, teamBlk=0, teamTov=0;
+    let teamFgM=0, teamFgA=0, team3M=0, team3A=0, teamFtM=0, teamFtA=0;
+
+    const bodyRows = sorted.map(r => {
+      const pkey = get(r,'player_key');
+      const p = PLAYERS_BY_KEY[pkey];
+      const name = p ? fullName(p) : (pkey || '');
+      const reb = (get(r,'rebounds_def')||0)+(get(r,'rebounds_off')||0);
+      const starter = get(r,'is_starter') ? '●' : '';
+      const pf = getPbpFouls(pkey, matchId);
+      const ofFoul = pf ? pf[0] : 0, tfFoul = pf ? (pf[1]+pf[2]) : 0;
+      teamPts += get(r,'points')||0; teamReb += reb;
+      teamAst += get(r,'assists')||0; teamStl += get(r,'steals')||0;
+      teamBlk += get(r,'blocks')||0; teamTov += get(r,'turnovers')||0;
+      teamFgM += get(r,'fg_made')||0; teamFgA += get(r,'fg_att')||0;
+      team3M  += get(r,'three_made')||0; team3A  += get(r,'three_att')||0;
+      teamFtM += get(r,'ft_made')||0;  teamFtA  += get(r,'ft_att')||0;
+      const efgVal = efg(r), tsVal = ts(r), gmscVal = gmsc(r);
+      return `<tr class="match">
+        <td style="text-align:left;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+          <span class="muted" style="font-size:11px;margin-right:4px">${starter}</span>
+          <a href="#/player/${encodeURIComponent(pkey)}">${escapeHtml(name)}</a></td>
+        <td>${escapeHtml(get(r,'minutes')||'')}</td>
+        <td><strong>${fmtInt(get(r,'points'))}</strong></td>
+        <td>${fmtInt(reb)}</td>
+        <td>${fmtInt(get(r,'assists'))}</td>
+        <td>${fmtInt(get(r,'steals'))}</td>
+        <td>${fmtInt(get(r,'blocks'))}</td>
+        <td>${fmtInt(get(r,'turnovers'))}</td>
+        <td>${ofFoul||'–'}</td>
+        <td>${fmtInt(get(r,'fg_made'))}/${fmtInt(get(r,'fg_att'))}</td>
+        <td>${fmtInt(get(r,'three_made'))}/${fmtInt(get(r,'three_att'))}</td>
+        <td>${fmtInt(get(r,'ft_made'))}/${fmtInt(get(r,'ft_att'))}</td>
+        <td>${fmtInt(get(r,'plus_minus'))}</td>
+        <td style="color:#a0c4ff">${efgVal!=null?(efgVal*100).toFixed(0)+'%':'–'}</td>
+        <td style="color:#a0c4ff">${fmt(gmscVal)}</td>
+      </tr>`;
+    }).join('');
+
+    const teamLink = TEAMS_DATA[teamName]
+      ? `<a href="#/team/${encodeURIComponent(teamName)}">${escapeHtml(teamName)}</a>`
+      : escapeHtml(teamName);
+
+    const efgTeam = teamFgA ? ((teamFgM + 0.5*team3M)/teamFgA*100).toFixed(0)+'%' : '–';
+    const totRow = `<tr style="font-weight:600;border-top:2px solid #2a3a4a">
+      <td style="text-align:left">Totalt</td>
+      <td></td>
+      <td><strong>${teamPts}</strong></td>
+      <td>${teamReb}</td><td>${teamAst}</td><td>${teamStl}</td>
+      <td>${teamBlk}</td><td>${teamTov}</td><td></td>
+      <td>${teamFgM}/${teamFgA}</td><td>${team3M}/${team3A}</td><td>${teamFtM}/${teamFtA}</td>
+      <td></td><td style="color:#a0c4ff">${efgTeam}</td><td></td>
+    </tr>`;
+
+    return `
+      <div class="section">
+        <h2>${teamLink}</h2>
+        <div class="card scroll-x">
+          <table>
+            <thead><tr>
+              <th style="text-align:left;min-width:120px">Spelare</th>
+              <th>Min</th><th>PTS</th><th>REB</th><th>AST</th>
+              <th>STL</th><th>BLK</th><th>TOV</th>
+              <th title="Offensiva fouls">OF</th>
+              <th>FG</th><th>3P</th><th>FT</th><th>+/-</th>
+              <th title="Effective Field Goal%">eFG%</th>
+              <th title="Game Score">GmSc</th>
+            </tr></thead>
+            <tbody>${bodyRows}${totRow}</tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  const score = (m.hs != null && m.as != null) ? `${m.hs} – ${m.as}` : '';
+  const dateStr = m.date_parsed || m.date || '';
+
+  let html = `<div style="margin-bottom:16px">${backLink()}</div>
+    <div class="card">
+      <div style="font-size:13px;color:#9aa3b2;margin-bottom:4px">${escapeHtml(dateStr)} · ${escapeHtml(fmtSeason(m.year))}</div>
+      <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        <div style="font-size:18px;font-weight:700">
+          <a href="#/team/${encodeURIComponent(m.home)}">${escapeHtml(m.home)}</a>
+        </div>
+        <div style="font-size:28px;font-weight:700;font-variant-numeric:tabular-nums;color:#e8edf4">${score}</div>
+        <div style="font-size:18px;font-weight:700">
+          <a href="#/team/${encodeURIComponent(m.away)}">${escapeHtml(m.away)}</a>
+        </div>
+      </div>
+    </div>`;
+
+  html += boxTable(homeRows, m.home);
+  html += boxTable(awayRows, m.away);
 
   $main.innerHTML = html;
   window.scrollTo(0, 0);
@@ -1310,12 +1669,52 @@ function renderTeamSeasonLeaders(teamName, year) {
     </div>`;
 }
 
-function renderGameLog(allRows) {
-  const recent = allRows.slice(0, 20);
-  if (!recent.length) return '';
-  const rows = recent.map(r => {
+// Sorterbar kolumnrubrik för spelmatchlogg
+function _glTh(col, label, title) {
+  const active = _glSort.col === col;
+  const ind = active ? (_glSort.dir < 0 ? ' ▼' : ' ▲') : '';
+  const color = active ? ';color:#cce5ff' : '';
+  const tt = title ? ` title="${title}"` : '';
+  return `<th onclick="glSort('${col}')" style="cursor:pointer;user-select:none${color}"${tt}>${label}${ind}</th>`;
+}
+
+function glSort(col) {
+  _glSort.dir = _glSort.col === col ? -_glSort.dir : -1;
+  _glSort.col = col;
+  const tb = document.getElementById('gl-body');
+  if (tb) tb.innerHTML = buildGlRows(STATS_BY_PLAYER[_pKey] || []);
+}
+
+function buildGlRows(allRows) {
+  let rows = allRows.slice();
+  const {col, dir} = _glSort;
+  if (col) {
+    rows.sort((a, b) => {
+      let av, bv;
+      if (col === 'reb') {
+        av = (get(a,'rebounds_def')||0)+(get(a,'rebounds_off')||0);
+        bv = (get(b,'rebounds_def')||0)+(get(b,'rebounds_off')||0);
+      } else if (col === 'gmsc') {
+        av = gmsc(a); bv = gmsc(b);
+      } else if (col === 'date') {
+        const ma = MATCHES_BY_ID[get(a,'match_id')], mb = MATCHES_BY_ID[get(b,'match_id')];
+        av = ma ? (ma.date_parsed||'') : '';
+        bv = mb ? (mb.date_parsed||'') : '';
+        return dir * av.localeCompare(bv);
+      } else {
+        av = get(a, col);
+        bv = get(b, col);
+      }
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;   // nulls alltid sist
+      if (bv == null) return -1;
+      return dir * (av - bv);
+    });
+  }
+  return rows.map(r => {
     const m = MATCHES_BY_ID[get(r, 'match_id')];
     if (!m) return '';
+    const mid = get(r, 'match_id');
     const team = get(r, 'team_name') || '';
     const ownIsHome = team && team === m.home;
     const opp = ownIsHome ? m.away : m.home;
@@ -1323,14 +1722,19 @@ function renderGameLog(allRows) {
     const reb = (get(r,'rebounds_def')||0) + (get(r,'rebounds_off')||0);
     const result = score ? `${score} mot ${escapeHtml(opp || '')}` : escapeHtml(opp || '');
     const pkey = get(r, 'player_key');
-    const pf = getPbpFouls(pkey, get(r, 'match_id'));
+    const pf = getPbpFouls(pkey, mid);
     const offFoul = pf ? pf[0] : 0;
     const techFoul = pf ? (pf[1] + pf[2]) : 0;
     const ofCell = offFoul ? `<td style="color:#ff8b8b">${offFoul}</td>` : '<td class="muted">0</td>';
     const tfCell = techFoul ? `<td style="color:#ff8b8b">${techFoul}</td>` : '<td class="muted">0</td>';
+    // Markera rad som innehåller karriärbäst/säsongsbäst
+    const isBest = Object.values(_pBests).some(b => b.matchId === mid);
+    const rowStyle = isBest ? ' style="background:#1a1600"' : '';
+    const starCell = isBest ? '<td style="color:#ffd700;width:16px" title="Karriärbäst">★</td>' : '<td style="width:16px"></td>';
     return `
-      <tr class="match">
-        <td>${escapeHtml(m.date || '')}</td>
+      <tr class="match"${rowStyle}>
+        ${starCell}
+        <td><a href="#/match/${mid}" style="color:inherit">${escapeHtml(m.date || '')}</a></td>
         <td class="muted">${result}</td>
         <td>${escapeHtml(get(r,'minutes') || '')}</td>
         <td>${fmtInt(get(r,'points'))}</td>
@@ -1345,21 +1749,36 @@ function renderGameLog(allRows) {
         <td>${fmtInt(get(r,'three_made'))}/${fmtInt(get(r,'three_att'))}</td>
         <td>${fmtInt(get(r,'ft_made'))}/${fmtInt(get(r,'ft_att'))}</td>
         <td>${fmtInt(get(r,'plus_minus'))}</td>
+        <td style="color:#a0c4ff">${fmt(gmsc(r))}</td>
       </tr>`;
   }).join('');
+}
 
+function renderGameLog(allRows) {
+  if (!allRows.length) return '';
   return `
     <div class="section">
-      <h2>Senaste matcherna</h2>
+      <h2>Matcher (${allRows.length})</h2>
       <div class="card scroll-x">
         <table>
           <thead><tr>
-            <th>Datum</th><th>Match</th><th>Min</th>
-            <th>PTS</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TOV</th>
-            <th title="Offensiva fouls">OF</th><th title="Tekniska/osportsliga fouls">TF</th>
-            <th>FG</th><th>3P</th><th>FT</th><th>+/-</th>
+            <th style="width:16px"></th>
+            ${_glTh('date','Datum')}
+            <th style="text-align:left">Match</th>
+            <th>Min</th>
+            ${_glTh('points','PTS')}
+            ${_glTh('reb','REB')}
+            ${_glTh('assists','AST')}
+            ${_glTh('steals','STL')}
+            ${_glTh('blocks','BLK')}
+            ${_glTh('turnovers','TOV')}
+            <th title="Offensiva fouls">OF</th>
+            <th title="Tekniska/osportsliga fouls">TF</th>
+            <th>FG</th><th>3P</th><th>FT</th>
+            ${_glTh('plus_minus','+/-')}
+            ${_glTh('gmsc','GmSc','Game Score')}
           </tr></thead>
-          <tbody>${rows}</tbody>
+          <tbody id="gl-body">${buildGlRows(allRows)}</tbody>
         </table>
       </div>
     </div>`;
@@ -1372,7 +1791,7 @@ function renderGameLog(allRows) {
 let searchTimer = null;
 $search.addEventListener('input', () => {
   // Om vi är på en spelare-, lag- eller jämförelsesida, gå tillbaka till sök vid första bokstaven
-  const onSubpage = location.hash.startsWith('#/player/') || location.hash.startsWith('#/team/') || location.hash.startsWith('#/compare/');
+  const onSubpage = location.hash.startsWith('#/player/') || location.hash.startsWith('#/team/') || location.hash.startsWith('#/compare/') || location.hash.startsWith('#/match/');
   if (onSubpage && $search.value.trim()) {
     lastSearch = '';
     location.hash = '';
